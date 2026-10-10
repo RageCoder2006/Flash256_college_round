@@ -1,0 +1,6 @@
+out/
+core/bin/
+guard/target/
+node_modules/
+dist/
+*.log

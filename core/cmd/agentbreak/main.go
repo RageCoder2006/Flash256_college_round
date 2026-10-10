@@ -1,0 +1,276 @@
+// agentbreak: autonomous AI red-team control plane.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/41vi4p/agentbreak/core/internal/audit"
+	"github.com/41vi4p/agentbreak/core/internal/campaign"
+	"github.com/41vi4p/agentbreak/core/internal/guard"
+	"github.com/41vi4p/agentbreak/core/internal/harness"
+	"github.com/41vi4p/agentbreak/core/internal/scenario"
+	"github.com/41vi4p/agentbreak/core/internal/trace"
+	"github.com/41vi4p/agentbreak/core/internal/world"
+)
+
+func usage() {
+	fmt.Fprintln(os.Stderr, `usage: agentbreak <command> [flags]
+
+commands:
+  audit      static permission audit of a scenario
+  campaign   run seed attacks (and optionally the benign regression suite)
+  validate   baseline attacks -> replay under the Rust guard -> benign regression -> ablation
+  verify     verify the hash chain of a saved trace
+
+run "agentbreak <command> -h" for flags.`)
+	os.Exit(2)
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		usage()
+	}
+	var err error
+	switch os.Args[1] {
+	case "audit":
+		err = cmdAudit(os.Args[2:])
+	case "campaign":
+		err = cmdCampaign(os.Args[2:])
+	case "validate":
+		err = cmdValidate(os.Args[2:])
+	case "verify":
+		err = cmdVerify(os.Args[2:])
+	default:
+		usage()
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+}
+
+func cmdAudit(args []string) error {
+	fs := flag.NewFlagSet("audit", flag.ExitOnError)
+	scPath := fs.String("scenario", "scenarios/hr-records.yaml", "scenario file")
+	_ = fs.Parse(args)
+	sc, err := scenario.Load(*scPath)
+	if err != nil {
+		return err
+	}
+	fs2 := audit.Static(sc)
+	if len(fs2) == 0 {
+		fmt.Println("no static permission findings")
+	}
+	for _, f := range fs2 {
+		fmt.Printf("[%s] %-22s %-14s %s\n", strings.ToUpper(f.Severity), f.Kind, f.Tool, f.Detail)
+	}
+	return nil
+}
+
+func cmdVerify(args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: agentbreak verify <trace.json>")
+	}
+	tr, err := trace.Load(args[0])
+	if err != nil {
+		return err
+	}
+	if err := tr.Verify(); err != nil {
+		return err
+	}
+	fmt.Printf("OK  %s  steps=%d  head=%s\n", tr.TraceID, len(tr.Steps), tr.HeadHash())
+	return nil
+}
+
+func envOr(k, d string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return d
+}
+
+type common struct {
+	scPath, seedPath, outDir, guardURL, harnessCmd, llmURL, llmModel, llmKey string
+	repeats                                                                  int
+	offline                                                                  bool
+}
+
+func addCommon(fs *flag.FlagSet) *common {
+	c := &common{}
+	fs.StringVar(&c.scPath, "scenario", "scenarios/hr-records.yaml", "scenario file")
+	fs.StringVar(&c.seedPath, "seeds", "seeds/seeds.yaml", "seed corpus")
+	fs.StringVar(&c.outDir, "out", "out", "output directory for traces and report")
+	fs.IntVar(&c.repeats, "repeats", 1, "runs per seed×surface")
+	fs.BoolVar(&c.offline, "offline", false, "SIMULATED gullible model (pipeline test; not a security result)")
+	fs.StringVar(&c.guardURL, "guard-url", os.Getenv("AGENTBREAK_GUARD_URL"), "abguard-proxy base URL, e.g. http://127.0.0.1:7077")
+	fs.StringVar(&c.harnessCmd, "harness", envOr("AGENTBREAK_HARNESS_CMD", "node pi/packages/agentbreak/src/rpc.ts"), "command that starts the TS harness")
+	fs.StringVar(&c.llmURL, "llm-url", os.Getenv("AGENTBREAK_LLM_BASE_URL"), "OpenAI-compatible base URL (…/v1)")
+	fs.StringVar(&c.llmModel, "llm-model", os.Getenv("AGENTBREAK_LLM_MODEL"), "model id")
+	fs.StringVar(&c.llmKey, "llm-key", os.Getenv("AGENTBREAK_LLM_API_KEY"), "API key (if any)")
+	return c
+}
+
+type env struct {
+	r        *campaign.Runner
+	sc       *scenario.Scenario
+	seeds    []campaign.Seed
+	traceDir string
+	cleanup  func()
+}
+
+func (c *common) setup(ctx context.Context, needGuard bool) (*env, error) {
+	if !c.offline && (c.llmURL == "" || c.llmModel == "") {
+		return nil, fmt.Errorf("need -llm-url and -llm-model (or AGENTBREAK_LLM_BASE_URL / AGENTBREAK_LLM_MODEL), or pass -offline")
+	}
+	if needGuard && c.guardURL == "" {
+		return nil, fmt.Errorf("this command needs -guard-url (start the Rust guard: cargo run -p abguard-proxy)")
+	}
+	sc, err := scenario.Load(c.scPath)
+	if err != nil {
+		return nil, err
+	}
+	seeds, err := campaign.LoadSeeds(c.seedPath)
+	if err != nil {
+		return nil, err
+	}
+	ws := world.NewServer()
+	worldURL, err := ws.Start()
+	if err != nil {
+		return nil, err
+	}
+	hc, err := harness.Start(strings.Fields(c.harnessCmd))
+	if err != nil {
+		ws.Close()
+		return nil, err
+	}
+	cleanup := func() { hc.Close(); ws.Close() }
+	pctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	if err := hc.Ping(pctx); err != nil {
+		cleanup()
+		return nil, fmt.Errorf("harness not responding: %w", err)
+	}
+	llmBase := c.llmURL
+	if c.guardURL != "" && !c.offline {
+		llmBase = strings.TrimRight(c.guardURL, "/") + "/v1" // route LLM traffic through the guard proxy
+	}
+	r := &campaign.Runner{
+		Scenario: sc, Harness: hc, Worlds: ws, WorldURL: worldURL,
+		LLM:     harness.LLMSpec{BaseURL: llmBase, Model: c.llmModel, APIKey: c.llmKey},
+		Offline: c.offline, GuardURL: c.guardURL, GuardMode: "off", MaxTurns: 12,
+	}
+	if c.offline {
+		fmt.Println("NOTE: -offline uses a simulated gullible model. It validates the pipeline; it is not a measurement of any real model.")
+	}
+	return &env{r: r, sc: sc, seeds: seeds, traceDir: filepath.Join(c.outDir, "traces"), cleanup: cleanup}, nil
+}
+
+func writeReport(outDir, name string, v any) error {
+	b, _ := json.MarshalIndent(v, "", "  ")
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return err
+	}
+	p := filepath.Join(outDir, name)
+	if err := os.WriteFile(p, b, 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("report: %s\n", p)
+	return nil
+}
+
+func cmdCampaign(args []string) error {
+	fs := flag.NewFlagSet("campaign", flag.ExitOnError)
+	c := addCommon(fs)
+	guardMode := fs.String("guard", "off", "guard mode: off|monitor|enforce")
+	regress := fs.Bool("regress", false, "also run the benign regression suite")
+	_ = fs.Parse(args)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	e, err := c.setup(ctx, *guardMode != "off")
+	if err != nil {
+		return err
+	}
+	defer e.cleanup()
+	if *guardMode != "off" {
+		g := guard.New(c.guardURL)
+		if err := g.Health(ctx); err != nil {
+			return fmt.Errorf("guard not reachable at %s: %w", c.guardURL, err)
+		}
+		if err := g.PushPolicy(ctx, guard.PolicyFromScenario(e.sc, guard.AllDefenses)); err != nil {
+			return err
+		}
+		if err := g.SetMode(ctx, *guardMode); err != nil {
+			return err
+		}
+		e.r.GuardMode = *guardMode
+	}
+	fmt.Printf("== static permission audit (%s)\n", e.sc.ID)
+	for _, f := range audit.Static(e.sc) {
+		fmt.Printf("  [%s] %s %s: %s\n", strings.ToUpper(f.Severity), f.Kind, f.Tool, f.Detail)
+	}
+	fmt.Printf("== attack campaign: %d seeds × %d surfaces × %d repeats, guard=%s\n", len(e.seeds), len(e.sc.Surfaces), c.repeats, *guardMode)
+	rep, _, err := e.r.Run(ctx, e.seeds, c.repeats, e.traceDir, os.Stdout)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\nASR %.0f%% (%d/%d)\n", rep.ASR*100, rep.Successes, rep.Attempts)
+	for _, t := range rep.ByTechnique {
+		fmt.Printf("  %-24s %d/%d  %.0f%%\n", t.Technique, t.Successes, t.Attempts, t.ASR*100)
+	}
+	out := map[string]any{"attack": rep}
+	if *regress {
+		fmt.Printf("\n== regression (benign tasks), guard=%s\n", *guardMode)
+		rr, err := e.r.Regression(ctx, e.traceDir, os.Stdout)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("\nutility %.0f%% (%d/%d)\n", rr.Utility*100, rr.Passed, rr.Tasks)
+		out["regression"] = rr
+	}
+	fmt.Printf("traces: %s\n", e.traceDir)
+	return writeReport(c.outDir, "report.json", out)
+}
+
+func cmdValidate(args []string) error {
+	fs := flag.NewFlagSet("validate", flag.ExitOnError)
+	c := addCommon(fs)
+	ablate := fs.Bool("ablate", true, "knock out one defense at a time")
+	_ = fs.Parse(args)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	e, err := c.setup(ctx, true)
+	if err != nil {
+		return err
+	}
+	defer e.cleanup()
+	g := guard.New(c.guardURL)
+	if err := g.Health(ctx); err != nil {
+		return fmt.Errorf("guard not reachable at %s: %w", c.guardURL, err)
+	}
+	v, err := e.r.Validate(ctx, g, e.seeds, c.repeats, *ablate, e.traceDir, os.Stdout)
+	if err != nil {
+		return err
+	}
+	fmt.Println("\n================ DEFENSE VALIDATION ================")
+	fmt.Printf("exploits found (guard off):    %d/%d attempts  (ASR %.0f%%)\n", v.Baseline.Successes, v.Baseline.Attempts, v.Baseline.ASR*100)
+	fmt.Printf("replayed under guard:          %d  ->  blocked %d (%.0f%%), residual ASR %.0f%%\n", v.Replayed, v.Blocked, v.BlockedPct*100, v.Defended.ASR*100)
+	fmt.Printf("benign utility:                off %.0f%%  ->  on %.0f%%  (delta %+.0f pts)\n", v.RegressionOff.Utility*100, v.RegressionOn.Utility*100, v.UtilityDelta*100)
+	if len(v.RegressionOn.Failed) > 0 {
+		fmt.Printf("  benign tasks broken by guard: %v\n", v.RegressionOn.Failed)
+	}
+	if v.Guard != nil {
+		fmt.Printf("guard decisions:               %v  by rule %v\n", v.Guard.Decisions, v.Guard.ByRule)
+		fmt.Printf("guard decision latency:        p50 %dµs  p99 %dµs (n=%d)\n", v.Guard.Latency.P50, v.Guard.Latency.P99, v.Guard.Latency.N)
+	}
+	return writeReport(c.outDir, "validation.json", v)
+}

@@ -7,6 +7,7 @@ build:
 	cd core && go build -o bin/agentbreak ./cmd/agentbreak
 
 test:
+	cd guard && cargo build --release -q && cargo test -q
 	cd core && go test ./...
 	cd pi/packages/agentbreak && npx vitest --run
 

@@ -26,6 +26,8 @@ import (
 type Config struct {
 	OutDir       string
 	ScenarioPath string
+	SeedsPath    string
+	SandboxBin   string
 	GuardURL     string
 	Exe          string // path to this binary, used to launch runs
 	Offline      bool   // default for launched runs
@@ -47,6 +49,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/traces/{id}", s.traceByID)
 	mux.HandleFunc("GET /api/pairs", s.pairs)
 	mux.HandleFunc("GET /api/audit", s.auditHandler)
+	mux.HandleFunc("GET /api/advisories", func(w http.ResponseWriter, r *http.Request) {
+		v := readJSONFile(filepath.Join(s.cfg.OutDir, "advisories.json"))
+		if v == nil {
+			v = []any{}
+		}
+		writeJSON(w, v)
+	})
 	mux.HandleFunc("GET /api/guard", s.guardStatus)
 	mux.HandleFunc("POST /api/guard/mode", s.guardMode)
 	mux.HandleFunc("GET /api/runs", s.listRuns)
@@ -302,6 +311,12 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	args := []string{req.Kind, "-scenario", s.cfg.ScenarioPath, "-out", s.cfg.OutDir}
+	if s.cfg.SeedsPath != "" {
+		args = append(args, "-seeds", s.cfg.SeedsPath)
+	}
+	if s.cfg.SandboxBin != "" {
+		args = append(args, "-sandbox", s.cfg.SandboxBin)
+	}
 	offline := s.cfg.Offline
 	if req.Offline != nil {
 		offline = *req.Offline

@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { BreachLine } from "@/components/BreachLine";
-import { revealHidden, type AuditData, type Pair, type Summary, type Validation } from "@/lib/api";
+import { revealHidden, type Advisory, type AuditData, type Pair, type Summary, type Validation } from "@/lib/api";
 import { useFetch } from "@/lib/use";
 
 const DEFENSE_NAMES: Record<string, string> = {
@@ -11,6 +11,7 @@ const DEFENSE_NAMES: Record<string, string> = {
   D3: "Capability limits",
   D4: "Block egress after untrusted content",
   D5: "Block secrets leaving",
+  D6: "Keep tainted contexts off protected files",
   D7: "Approval for destructive tools",
 };
 
@@ -94,7 +95,7 @@ function Ablation({ v }: { v: Validation }) {
         </tbody>
       </table>
       <p style={{ color: "var(--ink-3)", fontSize: 13, margin: "10px 0 0" }}>
-        Exploits that still succeed, out of those replayed. D1 and D2 act on model traffic, so they only show an effect against a live model.
+        Exploits that still succeed, out of those replayed. D1 fences model traffic, so it only shows an effect against a live model.
       </p>
     </div>
   );
@@ -186,10 +187,32 @@ function Hunt({ s }: { s: Summary }) {
   );
 }
 
+function Advisories({ items }: { items: Advisory[] }) {
+  const ok = items.filter((a) => !a.error && a.title);
+  if (!ok.length) return null;
+  return (
+    <section className="section">
+      <header><h2>Analyst notes</h2><span className="sub">written by {ok[0].model}; explanation only, verdicts come from the oracle</span></header>
+      <div className="grid3">
+        {ok.map((a) => (
+          <div className="card" key={a.trace_id}>
+            <h3 style={{ fontSize: 16, marginBottom: 6 }}>{a.title}</h3>
+            <p style={{ margin: "0 0 8px" }}>{a.summary}</p>
+            <p style={{ margin: "0 0 8px", color: "var(--ink-2)" }}><b>Why it worked.</b> {a.root_cause}</p>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>{(a.fixes ?? []).map((f, i) => <li key={i}>{f}</li>)}</ul>
+            <p style={{ margin: "10px 0 0" }}><Link className="mono" href={`/traces/${a.trace_id}`}>{a.trace_id}</Link></p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function Overview() {
   const sum = useFetch<Summary>("/api/summary", 5000);
   const pairs = useFetch<Pair[]>("/api/pairs", 5000);
   const audit = useFetch<AuditData>("/api/audit");
+  const adv = useFetch<Advisory[]>("/api/advisories", 10000);
   if (sum.error && !sum.data) {
     return (
       <section className="verdict">
@@ -217,6 +240,7 @@ export default function Overview() {
         </section>
       )}
       {sum.data && <Hunt s={sum.data} />}
+      {adv.data && <Advisories items={adv.data} />}
       {audit.data && (
         <section className="section">
           <header><h2>Before any attack</h2><span className="sub">static review of what the agent is allowed to do</span></header>

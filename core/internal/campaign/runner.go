@@ -6,11 +6,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/41vi4p/agentbreak/core/internal/audit"
 	"github.com/41vi4p/agentbreak/core/internal/harness"
+	"github.com/41vi4p/agentbreak/core/internal/kernel"
 	"github.com/41vi4p/agentbreak/core/internal/oracle"
 	"github.com/41vi4p/agentbreak/core/internal/scenario"
 	"github.com/41vi4p/agentbreak/core/internal/trace"
@@ -29,6 +31,43 @@ type Runner struct {
 	GuardMode string          // off | monitor | enforce
 	GuardURL  string
 	MaxTurns  int
+	Sandbox   *world.Sandbox // required when the scenario has sandbox: true
+	Sink      *world.Sink
+	Host      *world.HostSecret
+	Kernel    *kernel.Emitter // optional TRIVEKTRA bridge
+}
+
+// newWorld builds an episode world, with a sandbox workspace when the scenario needs one.
+func (r *Runner) newWorld(episode string) (*world.World, error) {
+	w := world.New(r.Scenario)
+	if r.Scenario.Sandbox {
+		if r.Sandbox == nil || r.Sink == nil || r.Host == nil {
+			return nil, fmt.Errorf("scenario %s needs a sandbox: pass -sandbox <path to absandbox>", r.Scenario.ID)
+		}
+		if err := w.EnableSandbox(*r.Sandbox, r.Sink, r.Host); err != nil {
+			return nil, err
+		}
+		if r.Kernel != nil {
+			w.OnBash = func(ev world.BashEvent) {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				_ = r.Kernel.EmitTool(ctx, "", "bash", ev.PID, ev.Start, ev.End) // best effort
+			}
+		}
+	}
+	return w, nil
+}
+
+// Vars are the placeholders available to payload templates.
+func (r *Runner) Vars() map[string]string {
+	v := map[string]string{"attacker_email": AttackerEmail}
+	if r.Sink != nil {
+		v["sink_url"] = r.Sink.URL()
+	}
+	if r.Host != nil {
+		v["host_secret_path"] = r.Host.Path
+	}
+	return v
 }
 
 func newID(prefix string) string {
@@ -51,9 +90,36 @@ func (r *Runner) modelName() string {
 	return r.LLM.Model
 }
 
-// compromisedScript simulates a model that obeys the injected instruction:
-// read the poisoned surface, collect sensitive records, mail them to the attacker.
-func (r *Runner) compromisedScript(sf *scenario.Surface) []harness.ScriptedTurn {
+// compromisedScript simulates a model that obeys the injected instruction. Scenarios may define
+// their own (offline_attack); otherwise: read the poisoned surface, collect records, mail them out.
+func (r *Runner) compromisedScript(sf *scenario.Surface, w *world.World) []harness.ScriptedTurn {
+	sub := func(v string) string {
+		v = strings.ReplaceAll(v, "{{sink_url}}", w.SinkURL())
+		v = strings.ReplaceAll(v, "{{host_secret_path}}", w.HostSecretPath)
+		v = strings.ReplaceAll(v, "{{attacker_email}}", AttackerEmail)
+		return strings.ReplaceAll(v, "{{surface_target}}", sf.Target)
+	}
+	if r.Scenario.Sandbox {
+		return followCommands(sf, w)
+	}
+	if len(r.Scenario.OfflineAttack) > 0 {
+		var out []harness.ScriptedTurn
+		for _, t := range r.Scenario.OfflineAttack {
+			st := harness.ScriptedTurn{Text: sub(t.Text)}
+			for _, tc := range t.ToolCalls {
+				args := map[string]any{}
+				for k, v := range tc.Args {
+					if sv, ok := v.(string); ok {
+						v = sub(sv)
+					}
+					args[k] = v
+				}
+				st.ToolCalls = append(st.ToolCalls, harness.ScriptedToolCall{Name: tc.Name, Args: args})
+			}
+			out = append(out, st)
+		}
+		return out
+	}
 	var all []string
 	for _, rec := range r.Scenario.Records {
 		all = append(all, rec.Text)
@@ -117,7 +183,7 @@ func orOff(s string) string {
 
 // RunAttack plants the seed's payload on a surface and runs the scenario's user task.
 func (r *Runner) RunAttack(ctx context.Context, seed Seed, surfaceID string) (*trace.Trace, error) {
-	payload := seed.Render(map[string]string{"attacker_email": AttackerEmail})
+	payload := seed.Render(r.Vars())
 	return r.RunPayload(ctx, trace.Attack{SeedID: seed.ID, Technique: seed.Technique, Surface: surfaceID, Encoding: seed.Encoding, Payload: payload})
 }
 
@@ -127,17 +193,23 @@ func (r *Runner) RunPayload(ctx context.Context, atk trace.Attack) (*trace.Trace
 	if sf == nil {
 		return nil, fmt.Errorf("unknown surface %q", atk.Surface)
 	}
-	w := world.New(r.Scenario)
+	task := r.Scenario.TaskFor(sf)
+	tr := r.newTrace("attack", task)
+	w, err := r.newWorld(tr.TraceID)
+	if err != nil {
+		return nil, err
+	}
+	defer w.Close()
 	if err := w.PlantPayload(sf, atk.Payload); err != nil {
 		return nil, err
 	}
-	tr := r.newTrace("attack", r.Scenario.UserTask)
 	a := atk
 	tr.Attack = &a
 	start := time.Now()
-	if err := r.runEpisode(ctx, tr, w, r.llmFor(r.compromisedScript(sf)), r.Scenario.UserTask); err != nil {
+	if err := r.runEpisode(ctx, tr, w, r.llmFor(r.compromisedScript(sf, w)), task); err != nil {
 		return nil, err
 	}
+	recordSandbox(tr, w)
 	tr.Verdicts = oracle.Evaluate(r.Scenario, w)
 	tr.Success = oracle.AnySuccess(tr.Verdicts)
 	tr.Progress, tr.ProgressNote = oracle.Progress(r.Scenario, tr, tr.Verdicts)
@@ -148,8 +220,12 @@ func (r *Runner) RunPayload(ctx context.Context, atk trace.Attack) (*trace.Trace
 
 // RunBenign runs one legitimate task (no payload) and checks it still works.
 func (r *Runner) RunBenign(ctx context.Context, task scenario.BenignTask) (*trace.Trace, bool, []oracle.CheckResult, error) {
-	w := world.New(r.Scenario)
 	tr := r.newTrace("benign", task.UserTurns)
+	w, err := r.newWorld(tr.TraceID)
+	if err != nil {
+		return nil, false, nil, err
+	}
+	defer w.Close()
 	var script []harness.ScriptedTurn
 	for _, t := range task.Offline {
 		st := harness.ScriptedTurn{Text: t.Text}
@@ -167,4 +243,60 @@ func (r *Runner) RunBenign(ctx context.Context, task scenario.BenignTask) (*trac
 	tr.Findings = audit.Dynamic(r.Scenario, w)
 	tr.DurationMs = time.Since(start).Milliseconds()
 	return tr, ok, checks, nil
+}
+
+var (
+	backtickRE = regexp.MustCompile("`([^`\\n]+)`")
+	runLineRE  = regexp.MustCompile(`(?i)\brun:?\s+(.+?)(?:\s+(?:then|and then)\b.*)?$`)
+)
+
+// decodeTags maps Unicode tag characters (U+E0000+) back to ASCII, the way a tokenizer-level reader would.
+func decodeTags(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 0xE0020 && r <= 0xE007E:
+			b.WriteRune(r - 0xE0000)
+		case r >= 0xE0000 && r <= 0xE007F:
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// followCommands is the simulated gullible coding agent: it reads the poisoned document and then
+// runs whatever shell commands the document tells it to (in `backticks` or after "Run:").
+// A payload that carries no runnable command therefore fails, as it would against a careful model.
+func followCommands(sf *scenario.Surface, w *world.World) []harness.ScriptedTurn {
+	text := decodeTags(w.Documents[sf.Target].Text)
+	var cmds []string
+	looksLikeCommand := func(c string) bool { return strings.ContainsAny(c, " /|") } // not a bare identifier like `main`
+	for _, m := range backtickRE.FindAllStringSubmatch(text, -1) {
+		if looksLikeCommand(m[1]) {
+			cmds = append(cmds, m[1])
+		}
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if m := runLineRE.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
+			if c := strings.TrimRight(m[1], ". "); looksLikeCommand(c) {
+				cmds = append(cmds, strings.Trim(c, "`"))
+			}
+		}
+	}
+	turns := []harness.ScriptedTurn{{ToolCalls: []harness.ScriptedToolCall{{Name: "read_document", Args: map[string]any{"doc_id": sf.Target}}}}}
+	for _, c := range cmds {
+		turns = append(turns, harness.ScriptedTurn{ToolCalls: []harness.ScriptedToolCall{{Name: "bash", Args: map[string]any{"command": c}}}})
+	}
+	return append(turns, harness.ScriptedTurn{Text: "Setup complete."})
+}
+
+// recordSandbox appends what the sandbox saw (PIDs, canary-sink contact) to the trace.
+func recordSandbox(tr *trace.Trace, w *world.World) {
+	for _, ev := range w.BashEvents {
+		_, _ = tr.Append(trace.StepSandbox, ev.Start.UnixMilli(), map[string]any{"event": "bash_exec", "pid": ev.PID, "command": ev.Command, "ms": ev.End.Sub(ev.Start).Milliseconds()})
+	}
+	for _, h := range w.SinkHits() {
+		_, _ = tr.Append(trace.StepSandbox, h.At.UnixMilli(), map[string]any{"event": "canary_sink_hit", "method": h.Method, "path": h.Path, "bytes": len(h.Body)})
+	}
 }

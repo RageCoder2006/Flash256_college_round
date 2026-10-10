@@ -14,7 +14,7 @@ import (
 	"github.com/41vi4p/agentbreak/core/internal/scenario"
 )
 
-var AllDefenses = []string{"D1", "D2", "D3", "D4", "D5", "D7"}
+var AllDefenses = []string{"D1", "D2", "D3", "D4", "D5", "D6", "D7"}
 
 type Capability struct {
 	AllowedRecipientDomains []string `json:"allowed_recipient_domains"`
@@ -26,13 +26,14 @@ type Policy struct {
 	EgressTools      []string              `json:"egress_tools"`
 	DestructiveTools []string              `json:"destructive_tools"`
 	UntrustedTools   []string              `json:"untrusted_tools"`
+	ProtectedPaths   []string              `json:"protected_paths"`
 	Capabilities     map[string]Capability `json:"capabilities"`
 }
 
 // PolicyFromScenario derives the guard policy from the scenario's declared capabilities,
 // so the manifest the auditor checks is the same one the guard enforces.
 func PolicyFromScenario(sc *scenario.Scenario, defenses []string) Policy {
-	p := Policy{Defenses: defenses, EgressTools: []string{}, DestructiveTools: []string{}, Capabilities: map[string]Capability{}, UntrustedTools: []string{"read_document", "http_fetch", "memory_read"}}
+	p := Policy{Defenses: defenses, EgressTools: []string{}, ProtectedPaths: append([]string{}, sc.ProtectedPaths...), DestructiveTools: []string{}, Capabilities: map[string]Capability{}, UntrustedTools: []string{"read_document", "http_fetch", "memory_read"}}
 	names := make([]string, 0, len(sc.Capabilities))
 	for n := range sc.Capabilities {
 		names = append(names, n)

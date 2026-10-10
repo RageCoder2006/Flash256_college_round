@@ -9,17 +9,21 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"net/http"
 
+	"github.com/41vi4p/agentbreak/core/internal/advisory"
 	"github.com/41vi4p/agentbreak/core/internal/api"
 	"github.com/41vi4p/agentbreak/core/internal/attacker"
 	"github.com/41vi4p/agentbreak/core/internal/audit"
 	"github.com/41vi4p/agentbreak/core/internal/campaign"
 	"github.com/41vi4p/agentbreak/core/internal/guard"
 	"github.com/41vi4p/agentbreak/core/internal/harness"
+	"github.com/41vi4p/agentbreak/core/internal/kernel"
+	"github.com/41vi4p/agentbreak/core/internal/llm"
 	"github.com/41vi4p/agentbreak/core/internal/scenario"
 	"github.com/41vi4p/agentbreak/core/internal/trace"
 	"github.com/41vi4p/agentbreak/core/internal/world"
@@ -31,6 +35,7 @@ func usage() {
 commands:
   audit      static permission audit of a scenario
   campaign   run seed attacks (and optionally the benign regression suite)
+  report     LLM-written advisories for confirmed exploits (explanation only; verdicts stay deterministic)
   serve      dashboard API (traces, reports, guard control, launch runs)
   hunt       autonomous adaptive attack search (bandit + LLM payload crafting + minimisation)
   validate   baseline attacks -> replay under the Rust guard -> benign regression -> ablation
@@ -50,6 +55,8 @@ func main() {
 		err = cmdAudit(os.Args[2:])
 	case "campaign":
 		err = cmdCampaign(os.Args[2:])
+	case "report":
+		err = cmdReport(os.Args[2:])
 	case "serve":
 		err = cmdServe(os.Args[2:])
 	case "hunt":
@@ -109,6 +116,7 @@ func envOr(k, d string) string {
 
 type common struct {
 	scPath, seedPath, outDir, guardURL, harnessCmd, llmURL, llmModel, llmKey string
+	sandboxBin, kernelURL                                                    string
 	repeats                                                                  int
 	offline                                                                  bool
 }
@@ -124,6 +132,8 @@ func addCommon(fs *flag.FlagSet) *common {
 	fs.StringVar(&c.harnessCmd, "harness", envOr("AGENTBREAK_HARNESS_CMD", "node pi/packages/agentbreak/src/rpc.ts"), "command that starts the TS harness")
 	fs.StringVar(&c.llmURL, "llm-url", os.Getenv("AGENTBREAK_LLM_BASE_URL"), "OpenAI-compatible base URL (…/v1)")
 	fs.StringVar(&c.llmModel, "llm-model", os.Getenv("AGENTBREAK_LLM_MODEL"), "model id")
+	fs.StringVar(&c.sandboxBin, "sandbox", envOr("AGENTBREAK_SANDBOX", "guard/target/release/absandbox"), "absandbox binary (used when the scenario has sandbox: true)")
+	fs.StringVar(&c.kernelURL, "kernel-otlp", os.Getenv("AGENTBREAK_KERNEL_OTLP"), "TRIVEKTRA OTLP receiver (e.g. http://127.0.0.1:4318): emit a span per sandboxed tool call")
 	fs.StringVar(&c.llmKey, "llm-key", os.Getenv("AGENTBREAK_LLM_API_KEY"), "API key (if any)")
 	return c
 }
@@ -176,6 +186,27 @@ func (c *common) setup(ctx context.Context, needGuard bool) (*env, error) {
 		Scenario: sc, Harness: hc, Worlds: ws, WorldURL: worldURL,
 		LLM:     harness.LLMSpec{BaseURL: llmBase, Model: c.llmModel, APIKey: c.llmKey},
 		Offline: c.offline, GuardURL: c.guardURL, GuardMode: "off", MaxTurns: 12,
+	}
+	if sc.Sandbox {
+		sink, err := world.NewSink()
+		if err != nil {
+			cleanup()
+			return nil, err
+		}
+		hs, err := world.NewHostSecret()
+		if err != nil {
+			sink.Close()
+			cleanup()
+			return nil, err
+		}
+		prev := cleanup
+		cleanup = func() { sink.Close(); hs.Close(); prev() }
+		r.Sandbox, r.Sink, r.Host = &world.Sandbox{Bin: c.sandboxBin}, sink, hs
+		fmt.Printf("sandbox: %s (canary sink on %s)\n", c.sandboxBin, sink.Addr)
+	}
+	if c.kernelURL != "" {
+		r.Kernel = kernel.New(c.kernelURL)
+		fmt.Printf("kernel bridge: emitting execute_tool spans to %s\n", c.kernelURL)
 	}
 	if c.offline {
 		fmt.Println("NOTE: -offline uses a simulated gullible model. It validates the pipeline; it is not a measurement of any real model.")
@@ -294,6 +325,8 @@ func cmdHunt(args []string) error {
 	stopAfter := fs.Int("stop-after", 0, "stop after N discoveries (0 = spend the whole budget)")
 	llmRewrite := fs.Bool("llm-rewrite", true, "let the pi AttackerAgent write payloads (needs a real LLM)")
 	vsDefense := fs.Bool("vs-defense", false, "after the unguarded hunt, hunt again against the enforcing guard")
+	opsFlag := fs.String("ops", "", "comma list of mutation operators (default: all deterministic + llm_rewrite when a real LLM is used)")
+	surfFlag := fs.String("surfaces", "", "comma list of surface ids to attack (default: all)")
 	rngSeed := fs.Int64("rng-seed", 1, "search RNG seed (reproducible exploration order)")
 	_ = fs.Parse(args)
 
@@ -310,9 +343,21 @@ func cmdHunt(args []string) error {
 	if useLLM {
 		ops = append(ops, attacker.OpLLMRewrite)
 	}
+	if *opsFlag != "" {
+		ops = strings.Split(*opsFlag, ",")
+		useLLM = false
+		for _, o := range ops {
+			if o == attacker.OpLLMRewrite {
+				useLLM = !c.offline
+			}
+		}
+	}
 	var surfaces []string
 	for _, sf := range e.sc.Surfaces {
 		surfaces = append(surfaces, sf.ID)
+	}
+	if *surfFlag != "" {
+		surfaces = strings.Split(*surfFlag, ",")
 	}
 	arms := attacker.BuildArms(e.seeds, surfaces, ops)
 	var obj string
@@ -330,7 +375,7 @@ func cmdHunt(args []string) error {
 	}
 	cfg := attacker.Config{
 		Budget: *budget, Reliab: *reliab, MinimizeMax: *minRuns, StopAfter: *stopAfter, Seed: *rngSeed,
-		Vars: map[string]string{"attacker_email": campaign.AttackerEmail}, Log: os.Stdout,
+		Vars: e.r.Vars(), Log: os.Stdout,
 	}
 	hunt := func(label string) (*attacker.Result, error) {
 		fmt.Printf("== hunt (%s): %d arms, budget %d, llm_rewrite=%v\n", label, len(arms), *budget, useLLM)
@@ -386,6 +431,8 @@ func cmdServe(args []string) error {
 	addr := fs.String("addr", "127.0.0.1:8080", "listen address (keep it on loopback)")
 	outDir := fs.String("out", "out", "directory holding traces/ and report JSON")
 	scPath := fs.String("scenario", "scenarios/hr-records.yaml", "scenario file")
+	seedsPath := fs.String("seeds", "seeds/seeds.yaml", "seed corpus for launched runs")
+	sandboxBin := fs.String("sandbox", envOr("AGENTBREAK_SANDBOX", "guard/target/release/absandbox"), "absandbox binary for launched runs")
 	guardURL := fs.String("guard-url", os.Getenv("AGENTBREAK_GUARD_URL"), "abguard-proxy base URL")
 	offline := fs.Bool("offline", false, "launch runs with the simulated model by default")
 	_ = fs.Parse(args)
@@ -393,7 +440,51 @@ func cmdServe(args []string) error {
 	if err != nil {
 		return err
 	}
-	srv := api.New(api.Config{OutDir: *outDir, ScenarioPath: *scPath, GuardURL: *guardURL, Exe: exe, Offline: *offline})
+	srv := api.New(api.Config{OutDir: *outDir, ScenarioPath: *scPath, SeedsPath: *seedsPath, SandboxBin: *sandboxBin, GuardURL: *guardURL, Exe: exe, Offline: *offline})
 	fmt.Printf("agentbreak API on http://%s (out=%s)\n", *addr, *outDir)
 	return http.ListenAndServe(*addr, srv.Handler())
+}
+
+func cmdReport(args []string) error {
+	fs := flag.NewFlagSet("report", flag.ExitOnError)
+	outDir := fs.String("out", "out", "directory with traces/")
+	max := fs.Int("max", 5, "max advisories to write (one per technique, newest first)")
+	llmURL := fs.String("llm-url", os.Getenv("AGENTBREAK_LLM_BASE_URL"), "OpenAI-compatible base URL")
+	llmModel := fs.String("llm-model", os.Getenv("AGENTBREAK_LLM_MODEL"), "model id")
+	llmKey := fs.String("llm-key", os.Getenv("AGENTBREAK_LLM_API_KEY"), "API key")
+	_ = fs.Parse(args)
+	if *llmURL == "" || *llmModel == "" {
+		return fmt.Errorf("need -llm-url and -llm-model")
+	}
+	matches, _ := filepath.Glob(filepath.Join(*outDir, "traces", "*.json"))
+	var traces []*trace.Trace
+	for _, m := range matches {
+		if tr, err := trace.Load(m); err == nil && tr.Kind == "attack" && tr.Success && tr.Attack != nil {
+			traces = append(traces, tr)
+		}
+	}
+	sort.Slice(traces, func(i, j int) bool { return traces[i].StartedAt.After(traces[j].StartedAt) })
+	seen := map[string]bool{}
+	c := llm.New(*llmURL, *llmModel, *llmKey)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	var out []advisory.Advisory
+	for _, tr := range traces {
+		if seen[tr.Attack.Technique] || len(out) >= *max {
+			continue
+		}
+		seen[tr.Attack.Technique] = true
+		fmt.Printf("advisory for %s (%s)…\n", tr.TraceID, tr.Attack.Technique)
+		a := advisory.Write(ctx, c, tr)
+		if a.Error != "" {
+			fmt.Println("  failed:", a.Error)
+		} else {
+			fmt.Println("  ", a.Title)
+		}
+		out = append(out, a)
+	}
+	if len(out) == 0 {
+		fmt.Println("no successful attack traces to explain")
+	}
+	return writeReport(*outDir, "advisories.json", out)
 }

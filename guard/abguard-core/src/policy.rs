@@ -11,7 +11,7 @@ pub struct Capability {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Policy {
-    /// Defenses switched on. IDs: D1 fence untrusted tool results, D2 strip hidden text / scan args, D3 capability, D4 taint egress, D5 secret egress, D7 approval gate.
+    /// Defenses switched on. IDs: D1 fence untrusted tool results, D2 strip hidden text / scan args, D3 capability, D4 taint egress, D5 secret egress, D6 protected paths, D7 approval gate.
     #[serde(default = "default_defenses")]
     pub defenses: Vec<String>,
     /// Tools that move data out of the system.
@@ -23,12 +23,15 @@ pub struct Policy {
     /// Tools whose results carry content from outside the trust boundary (fenced/stripped on the wire).
     #[serde(default = "default_untrusted_tools")]
     pub untrusted_tools: Vec<String>,
+    /// Path fragments (".env", ".aws", "id_rsa") a tainted context must not touch.
+    #[serde(default)]
+    pub protected_paths: Vec<String>,
     #[serde(default)]
     pub capabilities: BTreeMap<String, Capability>,
 }
 
 fn default_defenses() -> Vec<String> {
-    ["D1", "D2", "D3", "D4", "D5", "D7"].iter().map(|s| s.to_string()).collect()
+    ["D1", "D2", "D3", "D4", "D5", "D6", "D7"].iter().map(|s| s.to_string()).collect()
 }
 fn default_untrusted_tools() -> Vec<String> {
     ["read_document", "http_fetch", "memory_read"].iter().map(|s| s.to_string()).collect()
@@ -44,6 +47,7 @@ impl Default for Policy {
             egress_tools: default_egress(),
             destructive_tools: vec![],
             untrusted_tools: default_untrusted_tools(),
+            protected_paths: vec![],
             capabilities: BTreeMap::new(),
         }
     }

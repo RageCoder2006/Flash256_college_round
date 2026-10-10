@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 make -s build
-(cd guard && cargo build --release -q)
+(cd guard && cargo build --release -q)  # abguard-proxy + absandbox
 [ -d dashboard/node_modules ] || (cd dashboard && npm install --silent)
 
 pids=()
@@ -14,7 +14,8 @@ trap cleanup EXIT INT TERM
 
 AGENTBREAK_GUARD_ADDR=127.0.0.1:7077 AGENTBREAK_UPSTREAM="${AGENTBREAK_LLM_BASE_URL:-}" ./guard/target/release/abguard-proxy & pids+=($!)
 sleep 1
-./core/bin/agentbreak serve -addr 127.0.0.1:8787 -guard-url http://127.0.0.1:7077 ${AGENTBREAK_OFFLINE:+-offline} & pids+=($!)
+# Coding-agent scenario instead: SCENARIO=scenarios/devops-coder.yaml SEEDS=seeds/coding-seeds.yaml
+./core/bin/agentbreak serve -addr 127.0.0.1:8787 -scenario "${SCENARIO:-scenarios/hr-records.yaml}" -seeds "${SEEDS:-seeds/seeds.yaml}" -guard-url http://127.0.0.1:7077 ${AGENTBREAK_OFFLINE:+-offline} & pids+=($!)
 (cd dashboard && npx next dev -p 3000) & pids+=($!)
 echo "dashboard: http://localhost:3000   api: http://127.0.0.1:8787   guard: http://127.0.0.1:7077"
 wait

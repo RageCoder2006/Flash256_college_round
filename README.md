@@ -38,6 +38,29 @@ with the rule id, with the guard on).
 (UCB1 bandit over technique × surface × operator, LLM-written payloads via the pi AttackerAgent,
 reliability re-runs, payload minimisation, optional `-vs-defense`).
 
+## Scenarios
+| Scenario | Target | Attack surface | What it shows |
+|---|---|---|---|
+| `scenarios/hr-records.yaml` | HR assistant (read docs, search records, send email) | resumes | EchoLeak-style data exfiltration by email |
+| `scenarios/devops-coder.yaml` | coding agent with `bash` in a **real sandbox** | README / CONTRIBUTING | poisoned setup steps leaking `.env`, plus a host-file escape probe |
+
+Run the coding scenario: `agentbreak validate -offline -guard-url http://127.0.0.1:7077 -scenario scenarios/devops-coder.yaml -seeds seeds/coding-seeds.yaml -out out-coding`.
+
+## Sandbox (`guard/absandbox`)
+No root and no user namespaces needed (many distros block them). It applies Landlock (filesystem:
+only the episode workspace is writable; TCP connect: only the canary sink port), a seccomp
+denylist (ptrace, mount, bpf, UDP/raw sockets, ...), rlimits and no_new_privs, then `exec`s the
+command. A host-only secret outside the workspace and the canary sink are the escape oracle: if the
+secret shows up in output or changes, or the sink receives workspace data, it is logged as a finding.
+`bash` never runs without it.
+
+## TRIVEKTRA bridge
+`-kernel-otlp http://127.0.0.1:<port>` emits an OTLP `execute_tool` span per sandboxed command with
+the sandbox's real PID (`process.pid`), in the format TRIVEKTRA's `genaispan` receiver accepts, so
+its eBPF agent can tie each tool call to kernel process/file/network events. Needs TRIVEKTRA's
+agent running (root, eBPF). The emitter is unit-tested; the live round trip is not exercised here.
+
 ## Status
-Done: M0 harness/world/oracle/auditor/traces, M1 Rust guard + validation + ablation, M2 adaptive
-attacker, M4 API + dashboard. Open: M3 Rust sandbox + coding-agent scenario, M5 TRIVEKTRA eBPF bridge.
+Done: harness/world/oracle/auditor/traces, Rust guard (D1-D7) + validation + ablation, adaptive
+attacker, API + dashboard, Landlock/seccomp sandbox + canary sink + coding scenario, kernel span
+emitter. Open: reading TRIVEKTRA's findings back into traces; a live-LLM run (waiting on the model URL).

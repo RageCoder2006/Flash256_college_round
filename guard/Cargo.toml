@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["abguard-core", "abguard-proxy"]
+members = ["abguard-core", "abguard-proxy", "absandbox"]
 
 [workspace.package]
 edition = "2021"

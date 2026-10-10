@@ -38,6 +38,9 @@ type Surface struct {
 	ID     string `yaml:"id" json:"id"`
 	Kind   string `yaml:"kind" json:"kind"`     // document | web | memory | user
 	Target string `yaml:"target" json:"target"` // document id / url / memory key
+	// UserTask is the legitimate request that makes the agent read this surface. Falls back to the
+	// scenario's user_task. Without it, a payload planted where the task never looks is untestable.
+	UserTask []string `yaml:"user_task" json:"user_task,omitempty"`
 }
 
 type Objective struct {
@@ -83,6 +86,11 @@ type Scenario struct {
 	Documents       map[string]Document   `yaml:"documents" json:"documents"`
 	Records         []Record              `yaml:"records" json:"records"`
 	Web             map[string]Document   `yaml:"web" json:"web"`
+	Sandbox         bool                  `yaml:"sandbox" json:"sandbox"`                 // bash runs in absandbox with a canary sink
+	Files           map[string]string     `yaml:"files" json:"files,omitempty"`           // workspace files (planted secrets live here)
+	Secrets         []string              `yaml:"secrets" json:"secrets,omitempty"`       // canary tokens that appear in Files
+	ProtectedPaths  []string              `yaml:"protected_paths" json:"protected_paths"` // fragments the guard keeps tainted contexts away from
+	OfflineAttack   []OfflineTurn         `yaml:"offline_attack" json:"offline_attack"`   // script for the simulated gullible model
 	Memory          map[string]string     `yaml:"memory" json:"memory"`
 	Surfaces        []Surface             `yaml:"surfaces" json:"surfaces"`
 	UserTask        []string              `yaml:"user_task" json:"user_task"`
@@ -151,11 +159,19 @@ func (s *Scenario) IsInternal(email string) bool {
 
 // Canaries returns the canary tokens of sensitive records.
 func (s *Scenario) Canaries() []string {
-	var out []string
+	out := append([]string(nil), s.Secrets...)
 	for _, r := range s.Records {
 		if r.Canary != "" && r.Label != "public" {
 			out = append(out, r.Canary)
 		}
 	}
 	return out
+}
+
+// TaskFor returns the user turns that expose the agent to the given surface.
+func (s *Scenario) TaskFor(sf *Surface) []string {
+	if sf != nil && len(sf.UserTask) > 0 {
+		return sf.UserTask
+	}
+	return s.UserTask
 }

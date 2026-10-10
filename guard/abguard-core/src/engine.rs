@@ -6,7 +6,18 @@
 use crate::detect::{find_secrets, scan_text};
 use crate::policy::Policy;
 use serde::{Deserialize, Serialize};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use serde_json::Value;
+
+/// Shell commands that open a network connection or ship data out.
+static NET_CMD: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)\b(curl|wget|nc|ncat|netcat|socat|telnet|scp|sftp|rsync|ssh|ftp|tftp)\b|https?://|/dev/(tcp|udp)/|\b(requests|urllib|urlopen|http\.client|socket)\b").unwrap()
+});
+static URL_HOST: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)(?:https?|ftp)://([a-z0-9._\-\[\]:]+)").unwrap());
+static DESTRUCTIVE_CMD: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)\brm\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r|--recursive)\b|\bmkfs\b|\bdd\s+[^|;]*of=|:\(\)\s*\{|\bchmod\s+-R\s+[0-7]*7[0-7]*\s+/|>\s*/dev/sd|\bshred\b|\bgit\s+push\s+[^|;]*--force").unwrap()
+});
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GuardRequest {
@@ -61,6 +72,10 @@ fn destinations(tool: &str, args: &Value) -> Vec<String> {
     match tool {
         "send_email" => vec![arg_str(args, "to").to_lowercase()],
         "http_fetch" => vec![url_host(arg_str(args, "url"))],
+        "bash" => URL_HOST
+            .captures_iter(arg_str(args, "command"))
+            .map(|c| url_host(&format!("x://{}", &c[1])))
+            .collect(),
         _ => vec![],
     }
 }
@@ -85,7 +100,9 @@ fn all_args_text(args: &Value) -> String {
 
 pub fn decide(policy: &Policy, req: &GuardRequest) -> Decision {
     let off = &req.defenses_off;
-    let is_egress = policy.egress_tools.iter().any(|t| t == &req.tool);
+    // bash is egress only when the command actually touches the network.
+    let is_egress = policy.egress_tools.iter().any(|t| t == &req.tool)
+        && (req.tool != "bash" || NET_CMD.is_match(arg_str(&req.args, "command")));
     let mut rule_ids: Vec<String> = Vec::new();
     let mut reasons: Vec<String> = Vec::new();
     let mut kind = DecisionKind::Allow;
@@ -115,8 +132,25 @@ pub fn decide(policy: &Policy, req: &GuardRequest) -> Decision {
         }
     }
 
-    // D7: destructive tools need a human.
-    if policy.enabled("D7", off) && policy.destructive_tools.iter().any(|t| t == &req.tool) {
+    // D6: a context that has read untrusted content must not reach for protected files.
+    if policy.enabled("D6", off) && !req.untrusted_sources.is_empty() && !policy.protected_paths.is_empty() {
+        let touched = match req.tool.as_str() {
+            "bash" => arg_str(&req.args, "command").to_string(),
+            "read_document" => arg_str(&req.args, "doc_id").to_string(),
+            _ => String::new(),
+        };
+        let user = req.user_turns.join("\n").to_lowercase();
+        for p in &policy.protected_paths {
+            if touched.to_lowercase().contains(&p.to_lowercase()) && !user.contains(&p.to_lowercase()) {
+                deny("D6", format!("tool '{}' touches protected path '{p}' after untrusted content, and the user never asked for it", req.tool), &mut rule_ids, &mut reasons, &mut kind);
+                break;
+            }
+        }
+    }
+
+    // D7: destructive tools (and destructive shell commands) need a human.
+    let destructive_cmd = req.tool == "bash" && DESTRUCTIVE_CMD.is_match(arg_str(&req.args, "command"));
+    if policy.enabled("D7", off) && (destructive_cmd || policy.destructive_tools.iter().any(|t| t == &req.tool)) {
         rule_ids.push("D7".into());
         reasons.push(format!("tool '{}' is destructive and needs human approval", req.tool));
         if kind == DecisionKind::Allow {

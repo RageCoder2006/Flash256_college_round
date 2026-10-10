@@ -34,6 +34,8 @@ type ToolEvent struct {
 	CallID string         `json:"call_id"`
 	// UntrustedBefore lists untrusted provenance labels already in the agent's context.
 	UntrustedBefore []string `json:"untrusted_before"`
+	// Result is the (truncated) tool output; recorded for bash so oracles can see what the agent read.
+	Result string `json:"result,omitempty"`
 }
 
 type World struct {
@@ -46,6 +48,15 @@ type World struct {
 	Fetches   []string
 	Log       []ToolEvent
 	untrusted []string
+
+	// sandbox (bash) state, see sandbox.go
+	sb             *Sandbox
+	sink           *Sink
+	root, workDir  string
+	HostCanary     string
+	BashEvents     []BashEvent
+	OnBash         func(BashEvent) // optional hook, e.g. kernel span emission
+	HostSecretPath string
 }
 
 // New builds a fresh world from a scenario (deep-copying mutable state).
@@ -72,6 +83,9 @@ func New(sc *scenario.Scenario) *World {
 func (w *World) PlantPayload(sf *scenario.Surface, payload string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	defer w.syncDocs()
+	payload = strings.ReplaceAll(payload, "{{host_secret_path}}", w.HostSecretPath)
+	payload = strings.ReplaceAll(payload, "{{sink_url}}", w.SinkURL())
 	switch sf.Kind {
 	case "document":
 		d, ok := w.Documents[sf.Target]
@@ -157,11 +171,26 @@ func str(args map[string]any, k string) string {
 func (w *World) Call(tool, callID string, args map[string]any) Result {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	idx := len(w.Log)
 	w.Log = append(w.Log, ToolEvent{
-		Seq: len(w.Log), Tool: tool, Args: args, CallID: callID,
+		Seq: idx, Tool: tool, Args: args, CallID: callID,
 		UntrustedBefore: append([]string(nil), w.untrusted...),
 	})
+	res := w.dispatch(tool, args)
+	if tool == "bash" {
+		r := res.Content
+		if len(r) > 4096 {
+			r = r[:4096]
+		}
+		w.Log[idx].Result = r
+	}
+	return res
+}
+
+func (w *World) dispatch(tool string, args map[string]any) Result {
 	switch tool {
+	case "bash":
+		return w.runBash(str(args, "command"))
 	case "list_documents":
 		ids := make([]string, 0, len(w.Documents))
 		for id := range w.Documents {

@@ -182,3 +182,13 @@ export function revealHidden(text: string): { parts: { t: string; hidden: boolea
   flush();
   return { parts, hiddenCount };
 }
+
+export interface Advisory {
+  trace_id: string;
+  title: string;
+  summary: string;
+  root_cause: string;
+  fixes: string[] | null;
+  model: string;
+  error?: string;
+}

@@ -91,3 +91,14 @@ func Verify(tr *trace.Trace, pub ed25519.PublicKey) error {
 	}
 	return nil
 }
+
+// SignBytes signs arbitrary data (used for report digests) under its own domain, so a trace signature
+// can never be replayed as a report signature or the other way round.
+func (s *Signer) SignBytes(domain string, data []byte) (keyID, sig string) {
+	return s.ID, base64.StdEncoding.EncodeToString(ed25519.Sign(s.priv, append([]byte("avhsol-"+domain+"-v1\n"), data...)))
+}
+
+func VerifyBytes(pub ed25519.PublicKey, domain string, data []byte, sig string) bool {
+	b, err := base64.StdEncoding.DecodeString(sig)
+	return err == nil && ed25519.Verify(pub, append([]byte("avhsol-"+domain+"-v1\n"), data...), b)
+}

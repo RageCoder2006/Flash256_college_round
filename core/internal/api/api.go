@@ -19,10 +19,13 @@ import (
 	"time"
 
 	"github.com/41vi4p/avhsol/core/internal/audit"
+	"github.com/41vi4p/avhsol/core/internal/breach"
+	"github.com/41vi4p/avhsol/core/internal/export"
 	"github.com/41vi4p/avhsol/core/internal/graph"
 	"github.com/41vi4p/avhsol/core/internal/guard"
 	"github.com/41vi4p/avhsol/core/internal/llm"
 	"github.com/41vi4p/avhsol/core/internal/scenario"
+	"github.com/41vi4p/avhsol/core/internal/sign"
 	"github.com/41vi4p/avhsol/core/internal/trace"
 )
 
@@ -136,7 +139,7 @@ func (s *Server) Handler() http.Handler {
 	h(mux, "GET /api/runs/{id}/stream", RoleViewer, s.streamRun)
 	h(mux, "GET /api/whoami", RoleViewer, func(w http.ResponseWriter, r *http.Request) {
 		c := callerOf(r)
-		writeJSON(w, map[string]any{"role": c.Role.String(), "graph": s.cfg.Graph != nil})
+		writeJSON(w, map[string]any{"role": c.Role.String(), "graph": s.cfg.Graph != nil, "pdf": export.PDFAvailable()})
 	})
 	h(mux, "GET /api/auditlog", RoleAdmin, func(w http.ResponseWriter, r *http.Request) {
 		es, err := TailAuditLog(s.cfg.AuditPath, 200)
@@ -146,6 +149,10 @@ func (s *Server) Handler() http.Handler {
 		}
 		_, verr := VerifyAuditLog(s.cfg.AuditPath)
 		writeJSON(w, map[string]any{"intact": verr == nil, "problem": errString(verr), "entries": es})
+	})
+	h(mux, "GET /api/report", RoleViewer, s.reportHandler)
+	h(mux, "GET /api/report/skeletons", RoleViewer, func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"skeletons": export.BuiltinSkeletons(), "formats": export.Formats, "pdf": export.PDFAvailable()})
 	})
 	s.graphRoutes(mux)
 	return secure(cors(mux))
@@ -275,7 +282,7 @@ func (s *Server) traceByID(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, map[string]any{"trace": tr, "strip": Strip(tr), "chain_ok": tr.Verify() == nil, "head": tr.HeadHash()})
+	writeJSON(w, map[string]any{"trace": tr, "strip": breach.Strip(tr), "chain_ok": tr.Verify() == nil, "head": tr.HeadHash()})
 }
 
 type pairView struct {
@@ -291,9 +298,9 @@ type pairView struct {
 }
 
 type Side struct {
-	TraceID string `json:"trace_id"`
-	Success bool   `json:"success"`
-	Strip   []Node `json:"strip"`
+	TraceID string        `json:"trace_id"`
+	Success bool          `json:"success"`
+	Strip   []breach.Node `json:"strip"`
 }
 
 // pairs groups attack traces by identical payload+surface so an exploit and its guarded replay line up.
@@ -312,7 +319,7 @@ func (s *Server) pairs(w http.ResponseWriter, r *http.Request) {
 			groups[key] = g
 			order = append(order, key)
 		}
-		side := &Side{TraceID: tr.TraceID, Success: tr.Success, Strip: Strip(tr)}
+		side := &Side{TraceID: tr.TraceID, Success: tr.Success, Strip: breach.Strip(tr)}
 		switch tr.GuardMode {
 		case "off":
 			if g.Off == nil {
@@ -539,4 +546,47 @@ func (s *Server) streamRun(w http.ResponseWriter, r *http.Request) {
 		case <-tick.C:
 		}
 	}
+}
+
+// reportHandler generates a report from the run directory. Only built-in skeletons are accepted here,
+// never a path, so a caller cannot make the server read arbitrary files.
+func (s *Server) reportHandler(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	format := q.Get("format")
+	if format == "" {
+		format = "html"
+	}
+	skeleton := q.Get("skeleton")
+	if skeleton == "" {
+		skeleton = "security-report"
+	}
+	known := false
+	for _, n := range export.BuiltinSkeletons() {
+		known = known || n == skeleton
+	}
+	if !known {
+		http.Error(w, "unknown skeleton; use one of: "+strings.Join(export.BuiltinSkeletons(), ", "), http.StatusBadRequest)
+		return
+	}
+	o := export.Options{Dir: s.cfg.OutDir, ScenarioDir: filepath.Dir(s.cfg.ScenarioPath), Scenario: q.Get("scenario"), Title: q.Get("title"), Classification: q.Get("classification")}
+	if len(o.Title) > 120 || len(o.Classification) > 40 {
+		http.Error(w, "title or classification too long", http.StatusBadRequest)
+		return
+	}
+	if pub, err := sign.LoadPublic(graph.Setting("AVHSOL_SIGNING_KEY", "", "deploy/stack/signing.key") + ".pub"); err == nil {
+		o.Pub = pub // verify trace signatures; the API itself never holds the private key
+	}
+	body, ct, err := export.Generate(o, skeleton, format)
+	if err != nil {
+		code := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "no traces") || strings.Contains(err.Error(), "needs Chrome") || strings.Contains(err.Error(), "unknown format") {
+			code = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), code)
+		return
+	}
+	ext := map[string]string{"html": "html", "pdf": "pdf", "md": "md", "json": "json", "sarif": "sarif"}[format]
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Content-Disposition", `attachment; filename="avhsol-report.`+ext+`"`)
+	_, _ = w.Write(body)
 }

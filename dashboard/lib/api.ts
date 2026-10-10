@@ -322,3 +322,18 @@ export interface GraphAnswer {
   evidence: SimilarHit[];
   episodes: string[];
 }
+
+/** Downloads a generated report. It is saved as a file, never rendered inside the dashboard's own origin. */
+export async function downloadReport(format: string, skeleton: string) {
+  const r = await fetch(`${API}/api/report?format=${encodeURIComponent(format)}&skeleton=${encodeURIComponent(skeleton)}`, { headers: headers(), cache: "no-store" });
+  await check(r, "/api/report");
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `avhsol-report.${format}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}

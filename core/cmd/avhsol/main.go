@@ -24,6 +24,7 @@ import (
 	"github.com/41vi4p/avhsol/core/internal/brand"
 	"github.com/41vi4p/avhsol/core/internal/campaign"
 	"github.com/41vi4p/avhsol/core/internal/cliagent"
+	"github.com/41vi4p/avhsol/core/internal/export"
 	"github.com/41vi4p/avhsol/core/internal/graph"
 	"github.com/41vi4p/avhsol/core/internal/guard"
 	"github.com/41vi4p/avhsol/core/internal/harness"
@@ -58,6 +59,7 @@ commands:
   serve      dashboard API (traces, reports, guard control, launch runs)
   hunt       autonomous adaptive attack search (bandit + LLM payload crafting + minimisation)
   validate   baseline attacks -> replay under the Rust guard -> benign regression -> ablation
+  export     write the security report: html, pdf, md, json or sarif (layout from a JSON skeleton)
   auditlog   verify | tail the API's tamper-evident audit log
   version    what this is, and who made it
   keygen     create the Ed25519 key that signs every trace
@@ -94,6 +96,8 @@ func main() {
 		fmt.Println(brand.Banner())
 		fmt.Println(brand.Tagline)
 		fmt.Printf("version %s\n%s\n", brand.Version, brand.Credits())
+	case "export":
+		err = cmdExport(os.Args[2:])
 	case "auditlog":
 		err = cmdAuditLog(os.Args[2:])
 	case "keygen":
@@ -743,4 +747,51 @@ func cmdAuditLog(args []string) error {
 		return nil
 	}
 	return fmt.Errorf("usage: avhsol auditlog verify|tail")
+}
+
+func cmdExport(args []string) error {
+	fs := flag.NewFlagSet("export", flag.ExitOnError)
+	in := fs.String("in", "out", "run directory (traces/, validation.json, advisories.json)")
+	format := fs.String("format", "html", "html | pdf | md | json | sarif")
+	skeleton := fs.String("skeleton", "security-report", "built-in skeleton name or a path to your own JSON skeleton")
+	outFile := fs.String("o", "", "output file (default: <in>/report.<ext>)")
+	scenarios := fs.String("scenarios", "scenarios", "scenario directory (for scope and the permission audit)")
+	scID := fs.String("scenario", "", "scenario id to report on (default: the one with the most attack runs)")
+	title := fs.String("title", "", "report title")
+	class := fs.String("classification", "", "classification on the cover (default CONFIDENTIAL)")
+	list := fs.Bool("list-skeletons", false, "list the built-in skeletons")
+	dump := fs.String("dump-skeleton", "", "print a built-in skeleton so you can copy and edit it")
+	_ = fs.Parse(args)
+	if *list {
+		fmt.Println(strings.Join(export.BuiltinSkeletons(), "\n"))
+		return nil
+	}
+	if *dump != "" {
+		b, err := export.BuiltinSkeletonJSON(*dump)
+		if err != nil {
+			return fmt.Errorf("no built-in skeleton %q (have: %s)", *dump, strings.Join(export.BuiltinSkeletons(), ", "))
+		}
+		fmt.Print(string(b))
+		return nil
+	}
+	o := export.Options{Dir: *in, ScenarioDir: *scenarios, Scenario: *scID, Title: *title, Classification: *class}
+	if pub, err := sign.LoadPublic(signingKeyPath() + ".pub"); err == nil {
+		o.Pub = pub
+	}
+	if sg, err := sign.LoadSigner(signingKeyPath()); err == nil {
+		o.Signer = sg
+	}
+	body, _, err := export.Generate(o, *skeleton, *format)
+	if err != nil {
+		return err
+	}
+	path := *outFile
+	if path == "" {
+		path = filepath.Join(*in, "report."+map[string]string{"html": "html", "pdf": "pdf", "md": "md", "json": "json", "sarif": "sarif"}[*format])
+	}
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("wrote %s (%d bytes, %s, skeleton %s)\n", path, len(body), *format, *skeleton)
+	return nil
 }

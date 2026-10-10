@@ -1,0 +1,29 @@
+{
+  "format": "avhsol-report-skeleton/1",
+  "name": "One-page audit note",
+  "theme": { "accent": "#1b5fd1", "classification": "INTERNAL" },
+  "footer": "{{doc.report_id}}",
+  "sections": [
+    {
+      "title": "Result",
+      "blocks": [
+        { "type": "callout", "tone": "warn", "if": "simulated", "title": "Simulated model", "text": "Not a real assessment." },
+        { "type": "paragraph", "text": "{{headline}}" },
+        { "type": "stats", "items": [
+          { "label": "Rating", "value": "{{risk_rating}}", "tone": "breach" },
+          { "label": "Valid runs", "value": "{{valid_runs}}", "tone": "neutral" }
+        ] }
+      ]
+    },
+    {
+      "title": "What worked",
+      "if": "has_findings",
+      "blocks": [
+        { "type": "table", "data": "findings", "columns": [
+          { "header": "Finding", "value": "{{row.title}}" },
+          { "header": "Stopped by", "value": "{{row.stopped_by|join}}" }
+        ] }
+      ]
+    }
+  ]
+}

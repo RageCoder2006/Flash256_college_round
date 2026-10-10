@@ -14,4 +14,7 @@ var Authors = []string{"David Porathur", "Rishit Baitule"}
 // Banner is the first line of CLI help and `avhsol version`.
 func Banner() string { return Name + ": " + Expansion }
 
+// AuthorNames reads naturally after "Prepared by".
+func AuthorNames() string { return Authors[0] + " and " + Authors[1] }
+
 func Credits() string { return "Made by " + Authors[0] + " and " + Authors[1] }

@@ -1,0 +1,2 @@
+{"ts":1791664223407,"who":"-","role":"none","remote":"127.0.0.1","method":"GET","path":"/api/report","status":401,"note":"bad or missing token","prev":"","hash":"617f530a54cfbd184b80f3502d4d422a1b9797d85c4f599343f04b559ca0c925"}
+{"ts":1791664235707,"who":"-","role":"none","remote":"127.0.0.1","method":"GET","path":"/api/whoami","status":401,"note":"bad or missing token","prev":"617f530a54cfbd184b80f3502d4d422a1b9797d85c4f599343f04b559ca0c925","hash":"dcbc8a73b7edb5380c4b798c51f2e308940c2317ba7df795f9662e10684ff9c9"}

@@ -1,0 +1,259 @@
+{
+  "format": "avhsol-report-skeleton/1",
+  "name": "{{title}}",
+  "theme": { "accent": "#c81e4a", "classification": "{{doc.classification}}" },
+  "header": "{{doc.report_id}}",
+  "footer": "{{doc.report_id}} · {{doc.classification}} · {{doc.date}}",
+  "toc": true,
+  "cover": {
+    "title": "{{title}}",
+    "subtitle": "Security assessment of an AI agent: attack discovery, proof of exploit and defense validation",
+    "meta": [
+      { "label": "Report ID", "value": "{{doc.report_id}}" },
+      { "label": "Date", "value": "{{doc.date}}" },
+      { "label": "Version", "value": "{{doc.version}}" },
+      { "label": "Status", "value": "{{doc.status}}" },
+      { "label": "Scenario", "value": "{{scenario}}" },
+      { "label": "Agent under test", "value": "{{target}}" },
+      { "label": "Model", "value": "{{model}}" },
+      { "label": "Prepared by", "value": "{{authors}}" }
+    ],
+    "note": "This report describes what was measured, how, and where it stops. Findings are proven by recorded, hash-chained traces."
+  },
+  "sections": [
+    {
+      "id": "executive-summary",
+      "title": "Executive summary",
+      "blocks": [
+        { "type": "callout", "tone": "warn", "if": "simulated", "title": "Simulated model", "text": "These runs exercise the tooling and say nothing about any real agent." },
+        { "type": "paragraph", "text": "{{headline}}" },
+        { "type": "stats", "items": [
+          { "label": "Overall risk rating", "value": "{{risk_rating}}", "tone": "breach" },
+          { "label": "Valid attack runs", "value": "{{valid_runs}}", "tone": "neutral" },
+          { "label": "Distinct attacks that worked", "value": "{{findings|count}}", "tone": "breach" },
+          { "label": "Errored runs (excluded)", "value": "{{errored_runs}}", "tone": "warn" },
+          { "label": "No-attack control runs", "value": "{{control_runs}}", "tone": "held" }
+        ] },
+        { "type": "paragraph", "text": "Basis for the rating: {{risk_basis}}" },
+        { "type": "chart", "chart": { "kind": "bar", "title": "Attack success by technique: runs that achieved a critical objective", "data": "techniques", "label": "technique", "value": "wins", "of": "runs", "tone": "breach" } },
+        { "type": "chart", "if": "has_defense", "chart": { "kind": "donut", "title": "Confirmed exploits replayed against the enforcing guard", "slices": [
+          { "label": "Blocked", "value": "defense_summary.blocked", "tone": "held" },
+          { "label": "Still succeeded", "value": "defense_summary.still_succeeding", "tone": "breach" }
+        ] } }
+      ]
+    },
+    {
+      "id": "scope-and-method",
+      "title": "Scope and methodology",
+      "blocks": [
+        { "type": "kv", "items": [
+          { "label": "Target", "value": "{{scope.target_kind}}" },
+          { "label": "Scenario", "value": "{{scenario}}" },
+          { "label": "Model", "value": "{{model}}" },
+          { "label": "Shell commands sandboxed", "value": "{{scope.sandboxed}}" }
+        ] },
+        { "type": "paragraph", "text": "{{scope.description}}" },
+        { "type": "heading", "level": 3, "text": "Objectives: what counts as a successful attack" },
+        { "type": "table", "data": "scope.objectives", "columns": [
+          { "header": "Objective", "value": "{{row.id}}", "style": "mono" },
+          { "header": "Meaning", "value": "{{row.description}}" },
+          { "header": "Severity", "value": "{{row.severity}}", "style": "severity" }
+        ] },
+        { "type": "heading", "level": 3, "text": "Attack surfaces" },
+        { "type": "list", "data": "scope.surfaces" },
+        { "type": "heading", "level": 3, "text": "Tools available to the agent" },
+        { "type": "list", "data": "scope.agent_tools" },
+        { "type": "heading", "level": 3, "text": "Techniques tried" },
+        { "type": "list", "data": "scope.techniques_tried" },
+        { "type": "heading", "level": 3, "text": "Method" },
+        { "type": "list", "lines": [
+          "An attacker plants instructions in content the agent reads (a document, a web page, a repository file), then gives the agent an ordinary task.",
+          "Success is decided by deterministic checks on planted canary data (a secret reaching a test server, a host file read, a forbidden call), never by what the model says.",
+          "Each working attack is re-run for a reliability estimate and shrunk to the smallest payload that still works.",
+          "A no-attack control run measures what the agent does on its own, so its habits are not mistaken for attack effects.",
+          "Confirmed exploits are replayed against the guard, and benign tasks are run with and without it to measure side effects.",
+          "Every run is recorded as a hash-chained trace, signed when a signing key is configured."
+        ] }
+      ]
+    },
+    {
+      "id": "risk-summary",
+      "title": "Risk summary",
+      "blocks": [
+        { "type": "heading", "level": 3, "text": "Risk matrix: severity by reliability" },
+        { "type": "table", "data": "risk_matrix", "columns": [
+          { "header": "Severity", "value": "{{row.severity}}", "style": "severity" },
+          { "header": "Reliable (80% of runs or more)", "value": "{{row.high}}", "align": "right" },
+          { "header": "Moderate (40 to 79%)", "value": "{{row.medium}}", "align": "right" },
+          { "header": "Occasional (under 40%)", "value": "{{row.low}}", "align": "right" },
+          { "header": "Total", "value": "{{row.total}}", "align": "right" }
+        ] },
+        { "type": "heading", "level": 3, "text": "Findings at a glance" },
+        { "type": "table", "data": "findings", "empty": "No attack achieved a critical objective.", "columns": [
+          { "header": "ID", "value": "{{row.id}}", "style": "mono" },
+          { "header": "Finding", "value": "{{row.title}}" },
+          { "header": "Severity", "value": "{{row.severity}}", "style": "severity" },
+          { "header": "Reliability", "value": "{{row.reliability_text}}", "align": "right" },
+          { "header": "OWASP", "value": "{{row.owasp_agentic|join}}" }
+        ] },
+        { "type": "chart", "if": "has_findings", "chart": { "kind": "bar", "title": "Reliability of each finding: runs in which it achieved a critical objective", "data": "findings", "label": "id", "value": "successes", "of": "runs", "tone": "breach" } }
+      ]
+    },
+    {
+      "id": "detailed-findings",
+      "title": "Detailed findings",
+      "if": "has_findings",
+      "page_break": true,
+      "blocks": [
+        { "type": "each", "data": "findings", "as": "f", "blocks": [
+          { "type": "heading", "level": 3, "text": "{{f.id}} · {{f.title}}" },
+          { "type": "kv", "items": [
+            { "label": "Severity", "value": "{{f.severity|upper}}" },
+            { "label": "OWASP Agentic category", "value": "{{f.owasp_agentic|join}}" },
+            { "label": "Objective achieved", "value": "{{f.objective|title}}" },
+            { "label": "Technique", "value": "{{f.technique|title}}" },
+            { "label": "Attack surface", "value": "{{f.surface}}" },
+            { "label": "Mutation", "value": "{{f.operator}}" },
+            { "label": "Reliability", "value": "{{f.reliability_text}}" },
+            { "label": "Evidence trace", "value": "{{f.trace_id}}" }
+          ] },
+          { "type": "paragraph", "text": "What happened: {{f.evidence}}" },
+          { "type": "heading", "level": 4, "text": "Attack path (red: data left; teal: the guard cut the chain)" },
+          { "type": "attack_path", "data": "f.path" },
+          { "type": "table", "title": "Incident timeline", "data": "f.timeline", "columns": [
+            { "header": "Time", "value": "{{row.t}}", "style": "mono" },
+            { "header": "Event", "value": "{{row.type}}", "style": "pill" },
+            { "header": "Detail", "value": "{{row.summary}}" }
+          ] },
+          { "type": "heading", "level": 4, "text": "Planted payload" },
+          { "type": "paragraph", "if": "f.hidden_chars", "text": "The payload contains {{f.hidden_chars}} invisible characters. They are highlighted below; a person reading the document sees nothing." },
+          { "type": "code", "text": "{{f.payload}}", "reveal_hidden": true },
+          { "type": "heading", "level": 4, "text": "Effect of the guard", "if": "f.guarded_replays" },
+          { "type": "paragraph", "if": "f.guarded_replays", "text": "{{f.guarded_replays}} replay(s) against the enforcing guard; {{f.guarded_replays_still_succeeding}} still succeeded. Stopped by: {{f.stopped_by|join}}." },
+          { "type": "heading", "level": 4, "text": "Analyst assessment", "if": "f.advisory" },
+          { "type": "paragraph", "if": "f.advisory", "text": "{{f.advisory.title}}. {{f.advisory.summary}}" },
+          { "type": "paragraph", "if": "f.advisory", "text": "Why it worked: {{f.advisory.root_cause}}" },
+          { "type": "list", "if": "f.advisory", "data": "f.advisory.fixes" },
+          { "type": "paragraph", "if": "f.advisory", "text": "Written by {{f.advisory.model}}. This is explanation only; the verdict comes from the deterministic checks." },
+          { "type": "heading", "level": 4, "text": "Reproduce" },
+          { "type": "code", "text": "{{f.reproduce}}" },
+          { "type": "spacer" }
+        ] }
+      ]
+    },
+    {
+      "id": "defense-validation",
+      "title": "Defense validation",
+      "if": "has_defense",
+      "blocks": [
+        { "type": "stats", "items": [
+          { "label": "Exploits replayed", "value": "{{defense_summary.replayed}}", "tone": "neutral" },
+          { "label": "Blocked by the guard", "value": "{{defense_summary.blocked}}", "tone": "held" },
+          { "label": "Benign tasks passing, guard off", "value": "{{defense_summary.benign_guard_off}}", "tone": "neutral" },
+          { "label": "Benign tasks passing, guard on", "value": "{{defense_summary.benign_guard_on}}", "tone": "held" }
+        ] },
+        { "type": "paragraph", "text": "Every confirmed exploit was replayed unchanged against the enforcing guard. Benign tasks were run with the guard off and on, to check that the defense does not break legitimate work." },
+        { "type": "table", "title": "Defense ablation: each defense removed, then each defense alone", "data": "defense_validation.ablation", "empty": "Ablation was not run for this assessment, so the contribution of each defense is not measured.", "columns": [
+          { "header": "Defense", "value": "{{row.defense}}", "style": "mono" },
+          { "header": "Configuration", "value": "{{row.variant}}" },
+          { "header": "Exploits still succeeding", "value": "{{row.successes}} of {{row.attempts}}", "align": "right" }
+        ] },
+        { "type": "paragraph", "if": "defense_validation.ablation", "text": "Read the table as follows. Where removing a defense changes nothing, others cover for it. Where a defense alone blocks everything, it is carrying the weight." }
+      ]
+    },
+    {
+      "id": "baseline-control",
+      "title": "Baseline: no-attack control",
+      "blocks": [
+        { "type": "chart", "if": "has_control", "chart": { "kind": "compare", "title": "Objectives: with attack versus no-attack control", "data": "objectives", "label": "objective", "a": "attack_k", "a_of": "attack_n", "b": "control_k", "b_of": "control_n", "a_label": "With attack", "b_label": "No-attack control" } },
+        { "type": "table", "data": "objectives", "columns": [
+          { "header": "Objective", "value": "{{row.objective}}", "style": "mono" },
+          { "header": "Severity", "value": "{{row.severity}}", "style": "severity" },
+          { "header": "With attack", "value": "{{row.attack}}", "align": "right" },
+          { "header": "Control", "value": "{{row.control}}", "align": "right" }
+        ] },
+        { "type": "paragraph", "if": "has_control", "text": "A rate that is also high in the control is the agent's own behaviour, not an effect of the attack." },
+        { "type": "callout", "tone": "warn", "unless": "has_control", "title": "No control was run", "text": "Without a no-attack control, behaviour the agent shows on its own cannot be separated from an attack effect." }
+      ]
+    },
+    {
+      "id": "attack-coverage",
+      "title": "Attack coverage",
+      "blocks": [
+        { "type": "table", "data": "techniques", "columns": [
+          { "header": "Technique", "value": "{{row.technique}}" },
+          { "header": "Valid runs", "value": "{{row.runs}}", "align": "right" },
+          { "header": "Achieved a critical objective", "value": "{{row.wins}}", "align": "right" },
+          { "header": "Rate", "value": "{{row.rate|pct}}", "align": "right" }
+        ] },
+        { "type": "paragraph", "if": "techniques_that_did_not_work", "text": "Did not work against this agent: {{techniques_that_did_not_work|join}}. That covers these attempts only." }
+      ]
+    },
+    {
+      "id": "permission-audit",
+      "title": "Permission audit",
+      "if": "static_audit",
+      "blocks": [
+        { "type": "paragraph", "text": "A static review of what the agent is allowed to do, before any attack is run." },
+        { "type": "table", "data": "static_audit", "columns": [
+          { "header": "Severity", "value": "{{row.severity}}", "style": "severity" },
+          { "header": "Issue", "value": "{{row.kind}}", "style": "mono" },
+          { "header": "Tool", "value": "{{row.tool}}" },
+          { "header": "Detail", "value": "{{row.detail}}" }
+        ] }
+      ]
+    },
+    {
+      "id": "remediation",
+      "title": "Remediation roadmap",
+      "blocks": [
+        { "type": "table", "data": "recommendations", "empty": "No remediation actions were derived from these results.", "columns": [
+          { "header": "Priority", "value": "P{{row.priority}}", "style": "pill" },
+          { "header": "Action", "value": "{{row.action}}" },
+          { "header": "Why", "value": "{{row.rationale}}" },
+          { "header": "Evidence", "value": "{{row.evidence}}" }
+        ] }
+      ]
+    },
+    {
+      "id": "limitations",
+      "title": "Limitations",
+      "blocks": [ { "type": "list", "data": "limitations" } ]
+    },
+    {
+      "id": "appendix-event-log",
+      "title": "Appendix A: Event log",
+      "page_break": true,
+      "blocks": [
+        { "type": "chart", "chart": { "kind": "strip", "title": "Every run on a time axis", "data": "runs", "time": "start_ms", "outcome": "outcome" } },
+        { "type": "table", "data": "runs", "columns": [
+          { "header": "Trace", "value": "{{row.id}}", "style": "mono" },
+          { "header": "Kind", "value": "{{row.kind}}" },
+          { "header": "Guard", "value": "{{row.guard}}", "style": "mono" },
+          { "header": "Technique", "value": "{{row.technique}}" },
+          { "header": "Surface", "value": "{{row.surface}}" },
+          { "header": "Outcome", "value": "{{row.outcome}}", "style": "outcome" },
+          { "header": "Started", "value": "{{row.started_at}}", "style": "mono" },
+          { "header": "Signature", "value": "{{row.signed}}", "style": "outcome" }
+        ] }
+      ]
+    },
+    {
+      "id": "appendix-integrity",
+      "title": "Appendix B: Integrity and verification",
+      "blocks": [
+        { "type": "kv", "items": [
+          { "label": "Traces behind this report", "value": "{{integrity.traces}}" },
+          { "label": "Signed", "value": "{{integrity.signed}}" },
+          { "label": "Signatures verified", "value": "{{integrity.verified}}" },
+          { "label": "Failed verification", "value": "{{integrity.failed_verification}}" },
+          { "label": "Unsigned", "value": "{{integrity.unsigned}}" },
+          { "label": "Report digest (sha256)", "value": "{{integrity.report_digest_sha256}}" },
+          { "label": "Report signed by key", "value": "{{integrity.report_signed_by}}" }
+        ] },
+        { "type": "paragraph", "text": "Each trace is a hash-chained record of every step. Verify any trace, including its signature, with:" },
+        { "type": "code", "text": "avhsol verify <run directory>/traces/<trace id>.json" }
+      ]
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { BreachLine } from "@/components/BreachLine";
-import { revealHidden, type Advisory, type AuditData, type Pair, type Summary, type Validation } from "@/lib/api";
+import { downloadReport, revealHidden, type Advisory, type AuditData, type Pair, type Summary, type Validation } from "@/lib/api";
 import { useFetch } from "@/lib/use";
 
 const DEFENSE_NAMES: Record<string, string> = {
@@ -208,6 +208,41 @@ function Advisories({ items }: { items: Advisory[] }) {
   );
 }
 
+function ReportPanel() {
+  const info = useFetch<{ skeletons: string[]; formats: string[]; pdf: boolean }>("/api/report/skeletons");
+  const [skeleton, setSkeleton] = useState("security-report");
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  async function get(format: string) {
+    setBusy(format);
+    setErr(null);
+    try {
+      await downloadReport(format, skeleton);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+    setBusy("");
+  }
+  if (!info.data) return null;
+  const label: Record<string, string> = { html: "HTML", pdf: "PDF", md: "Markdown", json: "JSON", sarif: "SARIF" };
+  return (
+    <section className="section">
+      <header><h2>Security report</h2><span className="sub">cover, findings with timelines, charts, remediation, limitations</span></header>
+      <div className="card form">
+        <label>Layout
+          <select value={skeleton} onChange={(e) => setSkeleton(e.target.value)} style={{ font: "inherit", padding: "7px 9px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)" }}>
+            {info.data.skeletons.map((s) => <option key={s} value={s}>{s.replaceAll("-", " ")}</option>)}
+          </select>
+        </label>
+        {info.data.formats.filter((f) => f !== "pdf" || info.data!.pdf).map((f) => (
+          <button key={f} className="btn ghost" disabled={!!busy} onClick={() => get(f)}>{busy === f ? "Preparing…" : `Download ${label[f] ?? f}`}</button>
+        ))}
+        {err && <p className="err" style={{ flexBasis: "100%", margin: 0 }}>{err}</p>}
+      </div>
+    </section>
+  );
+}
+
 export default function Overview() {
   const sum = useFetch<Summary>("/api/summary", 5000);
   const pairs = useFetch<Pair[]>("/api/pairs", 5000);
@@ -239,6 +274,7 @@ export default function Overview() {
           </div>
         </section>
       )}
+      {v && <ReportPanel />}
       {sum.data && <Hunt s={sum.data} />}
       {adv.data && <Advisories items={adv.data} />}
       {audit.data && (

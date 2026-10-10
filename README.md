@@ -79,10 +79,21 @@ real model, and the graph keeps them out of statistics unless you ask.
 | `validate` | baseline → replay under the guard → benign regression → defense ablation |
 | `policy-test` | replay recorded traces through a policy, offline |
 | `report` | model-written analyst advisories for confirmed exploits |
+| `export` | the **security report**: `html`, `pdf`, `md`, `json` or `sarif`, laid out by a JSON skeleton (see [docs/REPORTS.md](docs/REPORTS.md)) |
 | `graph` | `init ingest stats episodes why beliefs history techniques similar ask reset` |
 | `serve` | the API behind the dashboard |
 | `keygen`, `verify` | trace signing |
 | `auditlog` | verify or tail the API's tamper-evident audit log |
+
+## Reports
+
+`avhsol export -in <run dir> -format pdf` writes a security assessment report: branded cover and document
+control, executive summary with risk rating and charts, scope and method, risk matrix, detailed findings (attack
+path, incident timeline, payload, effect of the guard, analyst reasoning, reproduction), defense validation, the
+no-attack baseline, remediation roadmap, limitations, event log and an integrity appendix. The **layout is a JSON
+skeleton**, so another required format is another file, not code: `docs/skeletons/one-page-audit.json` is an
+example. Also available from the dashboard and the API. Samples from real runs: `docs/sample/`. The report only
+claims what was measured (no rating for simulated runs; reliability only with repeats; errored runs excluded).
 
 ## Targets
 
@@ -134,7 +145,7 @@ Caveats: one model, small samples (exfiltration vs control p≈0.11), and the co
 
 Bring-your-own-agent connectors beyond OpenAI-compatible CLI agents (Anthropic wire format, MCP, plain HTTP agents);
 automatic scenario generation for arbitrary tool lists; live fork-from-a-step ("revive" by re-running the model;
-the policy time-machine already works); an exportable HTML/PDF/SARIF report; reading TRIVEKTRA's eBPF findings back
+the policy time-machine already works); reading TRIVEKTRA's eBPF findings back
 into traces (spans are emitted); TLS on the stack's database ports.
 
 ## Credits

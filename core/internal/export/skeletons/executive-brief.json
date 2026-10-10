@@ -1,0 +1,59 @@
+{
+  "format": "avhsol-report-skeleton/1",
+  "name": "{{title}}",
+  "theme": { "accent": "#0b7a75", "classification": "{{doc.classification}}" },
+  "footer": "{{doc.report_id}} · {{doc.classification}}",
+  "cover": {
+    "title": "{{title}}",
+    "subtitle": "Executive brief",
+    "meta": [
+      { "label": "Report ID", "value": "{{doc.report_id}}" },
+      { "label": "Date", "value": "{{doc.date}}" },
+      { "label": "Agent under test", "value": "{{target}}" },
+      { "label": "Prepared by", "value": "{{authors}}" }
+    ]
+  },
+  "sections": [
+    {
+      "id": "summary",
+      "title": "Summary",
+      "blocks": [
+        { "type": "callout", "tone": "warn", "if": "simulated", "title": "Simulated model", "text": "These runs exercise the tooling and say nothing about any real agent." },
+        { "type": "paragraph", "text": "{{headline}}" },
+        { "type": "stats", "items": [
+          { "label": "Overall risk rating", "value": "{{risk_rating}}", "tone": "breach" },
+          { "label": "Distinct attacks that worked", "value": "{{findings|count}}", "tone": "breach" },
+          { "label": "Valid attack runs", "value": "{{valid_runs}}", "tone": "neutral" }
+        ] },
+        { "type": "chart", "if": "has_defense", "chart": { "kind": "donut", "title": "Confirmed exploits replayed against the enforcing guard", "slices": [
+          { "label": "Blocked", "value": "defense_summary.blocked", "tone": "held" },
+          { "label": "Still succeeded", "value": "defense_summary.still_succeeding", "tone": "breach" }
+        ] } }
+      ]
+    },
+    {
+      "id": "top-findings",
+      "title": "Findings",
+      "blocks": [
+        { "type": "table", "data": "findings", "empty": "No attack achieved a critical objective.", "columns": [
+          { "header": "ID", "value": "{{row.id}}", "style": "mono" },
+          { "header": "Finding", "value": "{{row.title}}" },
+          { "header": "Reliability", "value": "{{row.reliability_text}}", "align": "right" },
+          { "header": "Stopped by", "value": "{{row.stopped_by|join}}" }
+        ] }
+      ]
+    },
+    {
+      "id": "actions",
+      "title": "What to do",
+      "blocks": [
+        { "type": "table", "data": "recommendations", "empty": "No remediation actions were derived from these results.", "columns": [
+          { "header": "Priority", "value": "P{{row.priority}}", "style": "pill" },
+          { "header": "Action", "value": "{{row.action}}" },
+          { "header": "Why", "value": "{{row.rationale}}" }
+        ] }
+      ]
+    },
+    { "id": "limits", "title": "Limitations", "blocks": [ { "type": "list", "data": "limitations" } ] }
+  ]
+}

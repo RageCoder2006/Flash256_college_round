@@ -3,42 +3,6 @@
 version = 4
 
 [[package]]
-name = "abguard-core"
-version = "0.1.0"
-dependencies = [
- "once_cell",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml",
-]
-
-[[package]]
-name = "abguard-proxy"
-version = "0.1.0"
-dependencies = [
- "abguard-core",
- "axum",
- "bytes",
- "futures-util",
- "http-body-util",
- "reqwest",
- "serde",
- "serde_json",
- "serde_yaml",
- "tokio",
-]
-
-[[package]]
-name = "absandbox"
-version = "0.1.0"
-dependencies = [
- "landlock",
- "libc",
- "seccompiler",
-]
-
-[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -63,6 +27,42 @@ name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
+
+[[package]]
+name = "avhsol-guard"
+version = "0.1.0"
+dependencies = [
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+]
+
+[[package]]
+name = "avhsol-proxy"
+version = "0.1.0"
+dependencies = [
+ "avhsol-guard",
+ "axum",
+ "bytes",
+ "futures-util",
+ "http-body-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tokio",
+]
+
+[[package]]
+name = "avhsol-sandbox"
+version = "0.1.0"
+dependencies = [
+ "landlock",
+ "libc",
+ "seccompiler",
+]
 
 [[package]]
 name = "axum"

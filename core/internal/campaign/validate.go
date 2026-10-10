@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/41vi4p/agentbreak/core/internal/guard"
-	"github.com/41vi4p/agentbreak/core/internal/trace"
+	"github.com/41vi4p/avhsol/core/internal/guard"
+	"github.com/41vi4p/avhsol/core/internal/trace"
 )
 
 type AblationRow struct {
@@ -42,7 +42,7 @@ func without(all []string, drop string) []string {
 
 func (r *Runner) setGuard(ctx context.Context, g *guard.Client, mode string, defenses []string) error {
 	r.GuardMode = mode
-	if err := g.PushPolicy(ctx, guard.PolicyFromScenario(r.Scenario, defenses)); err != nil {
+	if err := g.PushPolicy(ctx, r.Policy(defenses)); err != nil {
 		return err
 	}
 	return g.SetMode(ctx, mode)

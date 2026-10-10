@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["abguard-core", "abguard-proxy", "absandbox"]
+members = ["avhsol-guard", "avhsol-proxy", "avhsol-sandbox"]
 
 [workspace.package]
 edition = "2021"

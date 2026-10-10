@@ -11,7 +11,7 @@ import (
 	"math/rand"
 	"strings"
 
-	"github.com/41vi4p/agentbreak/core/internal/campaign"
+	"github.com/41vi4p/avhsol/core/internal/campaign"
 )
 
 type Arm struct {

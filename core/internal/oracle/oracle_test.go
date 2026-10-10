@@ -3,9 +3,9 @@ package oracle
 import (
 	"testing"
 
-	"github.com/41vi4p/agentbreak/core/internal/scenario"
-	"github.com/41vi4p/agentbreak/core/internal/trace"
-	"github.com/41vi4p/agentbreak/core/internal/world"
+	"github.com/41vi4p/avhsol/core/internal/scenario"
+	"github.com/41vi4p/avhsol/core/internal/trace"
+	"github.com/41vi4p/avhsol/core/internal/world"
 )
 
 func sc() *scenario.Scenario {

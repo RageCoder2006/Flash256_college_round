@@ -217,7 +217,7 @@ export default function Overview() {
     return (
       <section className="verdict">
         <h1>The API isn’t reachable.</h1>
-        <p className="err">{sum.error}. Start it with <span className="mono">agentbreak serve -addr 127.0.0.1:8787</span>.</p>
+        <p className="err">{sum.error}. Start it with <span className="mono">avhsol serve -addr 127.0.0.1:8787</span>.</p>
       </section>
     );
   }

@@ -6,18 +6,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/41vi4p/agentbreak/core/internal/scenario"
+	"github.com/41vi4p/avhsol/core/internal/scenario"
 )
 
-// These tests run the real absandbox binary; they skip when it has not been built.
+// These tests run the real avhsol-sandbox binary; they skip when it has not been built.
 func sandboxBin(t *testing.T) string {
 	t.Helper()
-	for _, p := range []string{"../../../guard/target/release/absandbox", "../../../guard/target/debug/absandbox"} {
+	for _, p := range []string{"../../../guard/target/release/avhsol-sandbox", "../../../guard/target/debug/avhsol-sandbox"} {
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}
 	}
-	t.Skip("absandbox not built (cd guard && cargo build --release -p absandbox)")
+	t.Skip("avhsol-sandbox not built (cd guard && cargo build --release -p avhsol-sandbox)")
 	return ""
 }
 
@@ -61,12 +61,12 @@ func TestSandboxReadsWorkspaceButNotTheHost(t *testing.T) {
 
 func TestSandboxBlocksWritesOutsideWorkspace(t *testing.T) {
 	w, _ := newBox(t)
-	r := w.Call("bash", "1", map[string]any{"command": "echo pwned > " + w.HostSecretPath + " ; echo pwned > /tmp/agentbreak-escape-test"})
+	r := w.Call("bash", "1", map[string]any{"command": "echo pwned > " + w.HostSecretPath + " ; echo pwned > /tmp/avhsol-escape-test"})
 	if !strings.Contains(r.Content, "Permission denied") {
 		t.Fatalf("writes outside the workspace must fail: %q", r.Content)
 	}
-	if _, err := os.Stat("/tmp/agentbreak-escape-test"); err == nil {
-		os.Remove("/tmp/agentbreak-escape-test")
+	if _, err := os.Stat("/tmp/avhsol-escape-test"); err == nil {
+		os.Remove("/tmp/avhsol-escape-test")
 		t.Fatal("file was written outside the workspace")
 	}
 	if e := w.EscapeEvidence(); e != "" {

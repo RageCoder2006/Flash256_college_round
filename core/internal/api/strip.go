@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/41vi4p/agentbreak/core/internal/trace"
+	"github.com/41vi4p/avhsol/core/internal/trace"
 )
 
 // Node is one link in a "breach line": the chain of events from planted payload to outcome.

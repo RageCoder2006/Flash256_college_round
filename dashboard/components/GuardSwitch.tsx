@@ -1,14 +1,27 @@
 "use client";
-import { useState } from "react";
-import { post, type GuardStatus } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { getToken, post, type GuardStatus } from "@/lib/api";
 import { useFetch } from "@/lib/use";
 
 const MODES = ["off", "monitor", "enforce"] as const;
 
 export function GuardSwitch() {
-  const { data, reload } = useFetch<GuardStatus>("/api/guard", 4000);
+  // Don't poll while signed out: an unauthenticated poll is just noise (and a 401 every few seconds).
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    const on = () => setSignedIn(!!getToken());
+    const off = () => setSignedIn(false);
+    on();
+    window.addEventListener("ab-signed-in", on);
+    window.addEventListener("ab-auth-required", off);
+    return () => {
+      window.removeEventListener("ab-signed-in", on);
+      window.removeEventListener("ab-auth-required", off);
+    };
+  }, []);
+  const { data, reload } = useFetch<GuardStatus>(signedIn ? "/api/guard" : null, signedIn ? 4000 : 0);
   const [busy, setBusy] = useState(false);
-  const reachable = !!data?.reachable;
+  const reachable = signedIn && !!data?.reachable;
   async function set(mode: string) {
     setBusy(true);
     try {

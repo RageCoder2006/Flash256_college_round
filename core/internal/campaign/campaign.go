@@ -6,8 +6,8 @@ import (
 	"io"
 	"sort"
 
-	"github.com/41vi4p/agentbreak/core/internal/audit"
-	"github.com/41vi4p/agentbreak/core/internal/trace"
+	"github.com/41vi4p/avhsol/core/internal/audit"
+	"github.com/41vi4p/avhsol/core/internal/trace"
 )
 
 type TechniqueStat struct {

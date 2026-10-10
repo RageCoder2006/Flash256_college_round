@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/41vi4p/agentbreak/core/internal/trace"
+	"github.com/41vi4p/avhsol/core/internal/trace"
 )
 
 func TestDigestIsCompactAndIncludesEvidence(t *testing.T) {

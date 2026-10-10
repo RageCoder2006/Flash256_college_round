@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/41vi4p/agentbreak/core/internal/campaign"
-	"github.com/41vi4p/agentbreak/core/internal/harness"
-	"github.com/41vi4p/agentbreak/core/internal/trace"
+	"github.com/41vi4p/avhsol/core/internal/campaign"
+	"github.com/41vi4p/avhsol/core/internal/harness"
+	"github.com/41vi4p/avhsol/core/internal/trace"
 )
 
 // RunnerExecutor executes payloads through the campaign Runner and saves traces.

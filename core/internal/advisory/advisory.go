@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/41vi4p/agentbreak/core/internal/llm"
-	"github.com/41vi4p/agentbreak/core/internal/trace"
+	"github.com/41vi4p/avhsol/core/internal/llm"
+	"github.com/41vi4p/avhsol/core/internal/trace"
 )
 
 type Advisory struct {

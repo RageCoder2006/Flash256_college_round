@@ -86,7 +86,7 @@ type Scenario struct {
 	Documents       map[string]Document   `yaml:"documents" json:"documents"`
 	Records         []Record              `yaml:"records" json:"records"`
 	Web             map[string]Document   `yaml:"web" json:"web"`
-	Sandbox         bool                  `yaml:"sandbox" json:"sandbox"`                 // bash runs in absandbox with a canary sink
+	Sandbox         bool                  `yaml:"sandbox" json:"sandbox"`                 // bash runs in avhsol-sandbox with a canary sink
 	Files           map[string]string     `yaml:"files" json:"files,omitempty"`           // workspace files (planted secrets live here)
 	Secrets         []string              `yaml:"secrets" json:"secrets,omitempty"`       // canary tokens that appear in Files
 	ProtectedPaths  []string              `yaml:"protected_paths" json:"protected_paths"` // fragments the guard keeps tainted contexts away from

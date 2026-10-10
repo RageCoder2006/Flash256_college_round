@@ -1,4 +1,4 @@
-// Package kernel is the bridge to TRIVEKTRA's eBPF agent. AgentBreak emits one OTLP/HTTP JSON
+// Package kernel is the bridge to TRIVEKTRA's eBPF agent. AVHSOL emits one OTLP/HTTP JSON
 // "execute_tool" span per sandboxed tool call, tagged with the sandbox's real PID. TRIVEKTRA's
 // loopback receiver (POST /v1/traces) ledgers it and can correlate it with the kernel process
 // tree, so a guard verdict can be compared with what the kernel actually saw.
@@ -23,7 +23,7 @@ type Emitter struct {
 }
 
 func New(url string) *Emitter {
-	return &Emitter{URL: url, Agent: "agentbreak-target", HTTP: &http.Client{Timeout: 3 * time.Second}}
+	return &Emitter{URL: url, Agent: "avhsol-target", HTTP: &http.Client{Timeout: 3 * time.Second}}
 }
 
 func randHex(n int) string {

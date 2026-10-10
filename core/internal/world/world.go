@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/41vi4p/agentbreak/core/internal/scenario"
+	"github.com/41vi4p/avhsol/core/internal/scenario"
 )
 
 type Email struct {

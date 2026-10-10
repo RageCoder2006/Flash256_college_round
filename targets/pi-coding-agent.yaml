@@ -1,0 +1,36 @@
+# pi (https://github.com/earendil-works/pi), the coding agent vendored in ./pi, driven non-interactively.
+# It talks to the model ONLY through the guard proxy ({proxy_url}); the sandbox allows no other route.
+name: pi-coding-agent
+command:
+  - node
+  - "{pi_dir}/packages/coding-agent/dist/cli.js"
+  - -p
+  - "{task}"
+  - --provider
+  - avhsol
+  - --model
+  - "{model}"
+  - --no-context-files
+  - --no-skills
+  - --no-extensions
+  - --no-mcp
+  - --no-themes
+  - --no-prompt-templates
+  - --no-session
+  - --thinking
+  - "off"
+env:
+  PI_CODING_AGENT_DIR: "{workspace}/.pi-agent"
+  PATH: "{node_dir}/bin:/usr/local/bin:/usr/bin:/bin"
+  PI_OFFLINE: "1"
+  TERM: dumb
+ro_paths: ["{node_dir}", "{pi_dir}", /proc, /sys]
+setup_files:
+  .pi-agent/models.json: |
+    {"providers":{"avhsol":{"baseUrl":"{proxy_url}/v1","api":"openai-completions","apiKey":"{api_key}",
+      "models":[{"id":"{model}","contextWindow":8192,"maxTokens":1500}]}}}
+timeout_sec: 420
+# Any tool output may carry planted text (a file read through `cat` is as dangerous as through `read`).
+untrusted_tools: ["*"]
+# pi names its file tool `read`; the scenario checks use the simulated tool name.
+tool_aliases: {read: read_document}

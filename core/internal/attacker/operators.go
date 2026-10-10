@@ -3,7 +3,7 @@ package attacker
 import (
 	"strings"
 
-	"github.com/41vi4p/agentbreak/core/internal/campaign"
+	"github.com/41vi4p/avhsol/core/internal/campaign"
 )
 
 // Deterministic mutation operators. "llm_rewrite" is handled by the Crafter, not here.

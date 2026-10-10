@@ -1,0 +1,30 @@
+{
+	"name": "@avhsol/harness",
+	"version": "0.1.0",
+	"description": "AVHSOL harness: pi-powered target and attacker agents driven over stdio JSON-RPC by the Go control plane",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"bin": {
+		"avhsol-harness": "./dist/rpc.js"
+	},
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsc -p tsconfig.build.json",
+		"start": "node src/rpc.ts",
+		"test": "vitest --run"
+	},
+	"dependencies": {
+		"@earendil-works/pi-agent-core": "^1.1.0",
+		"@earendil-works/pi-ai": "^1.1.0",
+		"typebox": "1.3.27"
+	},
+	"license": "MIT",
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"devDependencies": {
+		"@types/node": "22.19.19",
+		"vitest": "4.1.11"
+	}
+}

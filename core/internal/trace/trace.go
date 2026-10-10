@@ -61,26 +61,44 @@ type Attack struct {
 }
 
 type Trace struct {
-	TraceID        string    `json:"trace_id"`
-	ScenarioID     string    `json:"scenario_id"`
-	ScenarioSHA256 string    `json:"scenario_sha256"`
-	Model          string    `json:"model"`
-	GuardMode      string    `json:"guard_mode"`
-	PolicyHash     string    `json:"policy_hash,omitempty"`
-	Kind           string    `json:"kind"` // attack | benign
-	Attack         *Attack   `json:"attack,omitempty"`
-	SystemPrompt   string    `json:"system_prompt"`
-	UserTurns      []string  `json:"user_turns"`
-	Steps          []Step    `json:"steps"`
-	Verdicts       []Verdict `json:"verdicts"`
-	Findings       []Finding `json:"findings"`
-	Success        bool      `json:"success"`  // any attack objective achieved
-	Progress       int       `json:"progress"` // 0..5 deterministic attack progress
-	ProgressNote   string    `json:"progress_note,omitempty"`
-	FinalText      string    `json:"final_text"`
-	Error          string    `json:"error,omitempty"`
-	StartedAt      time.Time `json:"started_at"`
-	DurationMs     int64     `json:"duration_ms"`
+	TraceID        string     `json:"trace_id"`
+	ScenarioID     string     `json:"scenario_id"`
+	ScenarioSHA256 string     `json:"scenario_sha256"`
+	Model          string     `json:"model"`
+	Target         string     `json:"target,omitempty"` // which agent was under test (pi-harness, a CLI target name, ...)
+	GuardMode      string     `json:"guard_mode"`
+	PolicyHash     string     `json:"policy_hash,omitempty"`
+	Kind           string     `json:"kind"` // attack | benign
+	Attack         *Attack    `json:"attack,omitempty"`
+	SystemPrompt   string     `json:"system_prompt"`
+	UserTurns      []string   `json:"user_turns"`
+	Steps          []Step     `json:"steps"`
+	Verdicts       []Verdict  `json:"verdicts"`
+	Findings       []Finding  `json:"findings"`
+	Success        bool       `json:"success"`  // any attack objective achieved
+	Progress       int        `json:"progress"` // 0..5 deterministic attack progress
+	ProgressNote   string     `json:"progress_note,omitempty"`
+	FinalText      string     `json:"final_text"`
+	Error          string     `json:"error,omitempty"`
+	StartedAt      time.Time  `json:"started_at"`
+	Signature      *Signature `json:"signature,omitempty"`
+	DurationMs     int64      `json:"duration_ms"`
+}
+
+// Signature binds a trace to the platform key that produced it (see internal/sign).
+type Signature struct {
+	KeyID string `json:"key_id"`
+	Sig   string `json:"sig"` // base64 Ed25519 over SigningMessage
+}
+
+// SigningMessage is exactly what is signed: identity, configuration, the chain head (which commits to
+// every step) and a hash of the automatic verdicts as recorded. Later human corrections live in the
+// graph as new beliefs and never touch this message.
+func (t *Trace) SigningMessage() []byte {
+	vb, _ := json.Marshal(t.Verdicts)
+	vh := sha256.Sum256(vb)
+	return []byte(fmt.Sprintf("avhsol-trace-v1\nid=%s\nkind=%s\nscenario=%s\nscenario_sha256=%s\nmodel=%s\ntarget=%s\nguard=%s\nstarted=%d\nsteps=%d\nhead=%s\nverdicts=%x\n",
+		t.TraceID, t.Kind, t.ScenarioID, t.ScenarioSHA256, t.Model, t.Target, t.GuardMode, t.StartedAt.UnixMilli(), len(t.Steps), t.HeadHash(), vh[:8]))
 }
 
 func stepHash(prev string, typ string, ts int64, data map[string]any) (string, error) {

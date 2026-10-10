@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/41vi4p/agentbreak/core/internal/campaign"
+	"github.com/41vi4p/avhsol/core/internal/campaign"
 )
 
 // fakeTarget "falls for" payloads that contain both a trigger and the attacker address.

@@ -1,0 +1,11 @@
+[package]
+name = "avhsol-sandbox"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "AVHSOL sandbox launcher: Landlock (fs + tcp) + seccomp + rlimits, no root needed"
+
+[dependencies]
+landlock = "0.4"
+seccompiler = "0.4"
+libc = "0.2"

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { API, post } from "@/lib/api";
+import { post, streamEvents } from "@/lib/api";
 
 type Kind = "validate" | "hunt" | "campaign";
 const DESC: Record<Kind, string> = {
@@ -26,9 +26,9 @@ export default function Run() {
   const [status, setStatus] = useState<"idle" | "running" | "done" | "failed">("idle");
   const [error, setError] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
-  const es = useRef<EventSource | null>(null);
+  const abort = useRef<AbortController | null>(null);
 
-  useEffect(() => () => es.current?.close(), []);
+  useEffect(() => () => abort.current?.abort(), []);
   useEffect(() => {
     box.current?.scrollTo({ top: box.current.scrollHeight });
   }, [lines]);
@@ -39,17 +39,12 @@ export default function Run() {
     try {
       const run = await post<{ id: string }>("/api/runs", { kind, offline, budget, vs_defense: vsDefense, regress: true });
       setStatus("running");
-      const src = new EventSource(`${API}/api/runs/${run.id}/stream`);
-      es.current = src;
-      src.addEventListener("line", (e) => setLines((l) => [...l, JSON.parse((e as MessageEvent).data)]));
-      src.addEventListener("end", (e) => {
-        setStatus(JSON.parse((e as MessageEvent).data) === "done" ? "done" : "failed");
-        src.close();
-      });
-      src.onerror = () => {
-        src.close();
-        setStatus((s) => (s === "running" ? "failed" : s));
-      };
+      const ctl = new AbortController();
+      abort.current = ctl;
+      streamEvents(`/api/runs/${run.id}/stream`, (ev, data) => {
+        if (ev === "line") setLines((l) => [...l, JSON.parse(data)]);
+        if (ev === "end") setStatus(JSON.parse(data) === "done" ? "done" : "failed");
+      }, ctl.signal).catch(() => setStatus((s) => (s === "running" ? "failed" : s)));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setStatus("idle");
@@ -76,7 +71,7 @@ export default function Run() {
           )}
           <button className="btn" onClick={start} disabled={status === "running"}>{status === "running" ? "Running…" : `Start ${kind}`}</button>
         </div>
-        {!offline && <p style={{ margin: "12px 0 0", color: "var(--ink-3)", fontSize: 13 }}>Uses the model set in AGENTBREAK_LLM_BASE_URL and AGENTBREAK_LLM_MODEL on the server.</p>}
+        {!offline && <p style={{ margin: "12px 0 0", color: "var(--ink-3)", fontSize: 13 }}>Uses the model set in AVHSOL_LLM_BASE_URL and AVHSOL_LLM_MODEL on the server.</p>}
         {error && <p className="err" style={{ marginTop: 12 }}>{error}</p>}
       </div>
       <div style={{ marginTop: 16 }}>

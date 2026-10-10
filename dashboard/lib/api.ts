@@ -136,16 +136,77 @@ export interface GuardStatus {
   reason?: string;
 }
 
+// ---- authentication ----
+// The token lives in sessionStorage (gone when the tab closes) and is sent as a bearer header.
+// It is never placed in a URL.
+const KEY = "avhsol.token";
+export function getToken(): string {
+  try {
+    return sessionStorage.getItem(KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+export function setToken(t: string) {
+  try {
+    if (t) sessionStorage.setItem(KEY, t);
+    else sessionStorage.removeItem(KEY);
+  } catch {
+    /* storage unavailable: the user will be asked again on reload */
+  }
+}
+
+export class AuthError extends Error {}
+
+function headers(extra?: Record<string, string>): Record<string, string> {
+  const t = getToken();
+  return { ...(t ? { Authorization: `Bearer ${t}` } : {}), ...extra };
+}
+
+async function check(r: Response, path: string) {
+  if (r.status === 401) {
+    window.dispatchEvent(new Event("ab-auth-required"));
+    throw new AuthError("sign in required");
+  }
+  if (!r.ok) throw new Error((await r.text()).trim() || `${path}: HTTP ${r.status}`);
+}
+
 export async function get<T>(path: string): Promise<T> {
-  const r = await fetch(API + path, { cache: "no-store" });
-  if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
+  const r = await fetch(API + path, { cache: "no-store", headers: headers() });
+  await check(r, path);
   return r.json() as Promise<T>;
 }
 
 export async function post<T>(path: string, body: unknown): Promise<T> {
-  const r = await fetch(API + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
+  const r = await fetch(API + path, { method: "POST", headers: headers({ "content-type": "application/json" }), body: JSON.stringify(body) });
+  await check(r, path);
   return r.json() as Promise<T>;
+}
+
+/** Reads a server-sent-event stream with fetch so the Authorization header can be sent. */
+export async function streamEvents(path: string, onEvent: (event: string, data: string) => void, signal?: AbortSignal) {
+  const r = await fetch(API + path, { headers: headers(), signal, cache: "no-store" });
+  await check(r, path);
+  const reader = r.body!.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i: number;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const block = buf.slice(0, i);
+      buf = buf.slice(i + 2);
+      let ev = "message";
+      let data = "";
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event: ")) ev = line.slice(7);
+        else if (line.startsWith("data: ")) data += line.slice(6);
+      }
+      onEvent(ev, data);
+    }
+  }
 }
 
 /** Make invisible Unicode visible: tag characters decode to their ASCII twin. */
@@ -191,4 +252,73 @@ export interface Advisory {
   fixes: string[] | null;
   model: string;
   error?: string;
+}
+
+// ---- trace graph ----
+export interface EpisodeRow {
+  id: string;
+  kind: string;
+  scenario: string;
+  target: string;
+  guard_mode: string;
+  start_ms: number;
+  critical_objective_achieved: boolean;
+}
+export interface PathStep {
+  seq: number;
+  type: string;
+  name?: string;
+  args?: string;
+  content?: string;
+  source?: string;
+  decision?: string;
+  rules?: string[];
+  tainted_by?: number;
+  secrets?: string[];
+}
+export interface Belief {
+  objective: string;
+  success: boolean;
+  evidence: string;
+  valid_from: number;
+  rec_from: number;
+  rec_to?: number;
+}
+export interface TechniqueStat {
+  technique: string;
+  episodes: number;
+  succeeded: number;
+  rate: number;
+  stopped_by?: string[];
+}
+export interface GNode {
+  id: string;
+  kind: string;
+  label: string;
+  seq: number;
+  flag?: string;
+}
+export interface GEdge {
+  from: string;
+  to: string;
+  type: string;
+}
+export interface Subgraph {
+  nodes: GNode[];
+  edges: GEdge[];
+}
+export interface SimilarHit {
+  score: number;
+  kind: string;
+  episode: string;
+  seq: number;
+  technique?: string;
+  guard_mode: string;
+  succeeded: boolean;
+  text: string;
+}
+export interface GraphAnswer {
+  answer: string;
+  evidence: SimilarHit[];
+  episodes: string[];
 }

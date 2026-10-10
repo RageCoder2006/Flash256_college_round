@@ -1,4 +1,4 @@
-// Package guard is the Go client for the Rust abguard-proxy control API.
+// Package guard is the Go client for the Rust avhsol-proxy control API.
 package guard
 
 import (
@@ -11,7 +11,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/41vi4p/agentbreak/core/internal/scenario"
+	"github.com/41vi4p/avhsol/core/internal/scenario"
 )
 
 var AllDefenses = []string{"D1", "D2", "D3", "D4", "D5", "D6", "D7"}
@@ -125,4 +125,78 @@ type Metrics struct {
 func (c *Client) Metrics(ctx context.Context) (*Metrics, error) {
 	var m Metrics
 	return &m, c.do(ctx, "GET", "/metrics", nil, &m)
+}
+
+type ToolResult struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+type ToolCall struct {
+	ID   string         `json:"id"`
+	Name string         `json:"name"`
+	Args map[string]any `json:"args"`
+}
+
+type BlockedCall struct {
+	Name     string   `json:"name"`
+	RuleIDs  []string `json:"rule_ids"`
+	Reason   string   `json:"reason"`
+	Enforced bool     `json:"enforced"`
+}
+
+// Exchange is one LLM round trip the proxy saw: what the agent was told, and what it asked to do.
+type Exchange struct {
+	ID          int64         `json:"id"`
+	ToolResults []ToolResult  `json:"tool_results"`
+	Text        string        `json:"text"`
+	ToolCalls   []ToolCall    `json:"tool_calls"`
+	Blocked     []BlockedCall `json:"blocked"`
+}
+
+func (c *Client) Exchanges(ctx context.Context, since int64) ([]Exchange, error) {
+	var out struct {
+		Exchanges []Exchange `json:"exchanges"`
+	}
+	err := c.do(ctx, "GET", fmt.Sprintf("/v1/guard/exchanges?since=%d", since), nil, &out)
+	return out.Exchanges, err
+}
+
+// LastExchangeID is the id to pass as `since` to read only exchanges recorded from now on.
+func (c *Client) LastExchangeID(ctx context.Context) int64 {
+	exs, err := c.Exchanges(ctx, 0)
+	if err != nil || len(exs) == 0 {
+		return 0
+	}
+	return exs[len(exs)-1].ID
+}
+
+// Decision is the guard's verdict on one proposed tool call.
+type Decision struct {
+	Decision string   `json:"decision"` // allow | deny | approve
+	Reason   string   `json:"reason"`
+	RuleIDs  []string `json:"rule_ids"`
+}
+
+type DecideRequest struct {
+	EpisodeID     string   `json:"episode_id"`
+	Tool          string   `json:"tool"`
+	Args          any      `json:"args"`
+	UntrustedSrcs []string `json:"untrusted_sources"`
+	UserTurns     []string `json:"user_turns"`
+	Mode          string   `json:"mode"`
+}
+
+// Decide asks the guard about a call without running it (used to replay recorded history).
+func (c *Client) Decide(ctx context.Context, r DecideRequest) (*Decision, error) {
+	// Go encodes a nil slice as null; the guard wants a list.
+	if r.UntrustedSrcs == nil {
+		r.UntrustedSrcs = []string{}
+	}
+	if r.UserTurns == nil {
+		r.UserTurns = []string{}
+	}
+	var d Decision
+	return &d, c.do(ctx, "POST", "/v1/guard/tool", r, &d)
 }

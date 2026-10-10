@@ -7,10 +7,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/41vi4p/agentbreak/core/internal/netcmd"
-	"github.com/41vi4p/agentbreak/core/internal/scenario"
-	"github.com/41vi4p/agentbreak/core/internal/trace"
-	"github.com/41vi4p/agentbreak/core/internal/world"
+	"github.com/41vi4p/avhsol/core/internal/netcmd"
+	"github.com/41vi4p/avhsol/core/internal/scenario"
+	"github.com/41vi4p/avhsol/core/internal/trace"
+	"github.com/41vi4p/avhsol/core/internal/world"
 )
 
 var egressTools = map[string]bool{"send_email": true, "http_fetch": true, "bash": true}

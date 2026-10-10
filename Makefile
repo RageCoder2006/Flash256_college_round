@@ -4,17 +4,17 @@ pi-build:
 	cd pi && npm install --ignore-scripts && npm run hydrate:model-data && npm run build:offline
 
 build:
-	cd core && go build -o bin/agentbreak ./cmd/agentbreak
+	cd core && go build -o bin/avhsol ./cmd/avhsol
 
 test:
 	cd guard && cargo build --release -q && cargo test -q
 	cd core && go test ./...
-	cd pi/packages/agentbreak && npx vitest --run
+	cd pi/packages/avhsol && npx vitest --run
 
 # Pipeline check with a simulated gullible model (no LLM needed).
 demo-offline: build
-	./core/bin/agentbreak campaign -offline -regress
+	./core/bin/avhsol campaign -offline -regress
 
-# Guard + API + dashboard together. AGENTBREAK_OFFLINE=1 makes runs default to the simulated model.
+# Guard + API + dashboard together. AVHSOL_OFFLINE=1 makes runs default to the simulated model.
 demo:
-	AGENTBREAK_OFFLINE=1 ./scripts/demo.sh
+	AVHSOL_OFFLINE=1 ./scripts/demo.sh

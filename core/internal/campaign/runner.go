@@ -10,13 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/41vi4p/agentbreak/core/internal/audit"
-	"github.com/41vi4p/agentbreak/core/internal/harness"
-	"github.com/41vi4p/agentbreak/core/internal/kernel"
-	"github.com/41vi4p/agentbreak/core/internal/oracle"
-	"github.com/41vi4p/agentbreak/core/internal/scenario"
-	"github.com/41vi4p/agentbreak/core/internal/trace"
-	"github.com/41vi4p/agentbreak/core/internal/world"
+	"github.com/41vi4p/avhsol/core/internal/audit"
+	"github.com/41vi4p/avhsol/core/internal/cliagent"
+	"github.com/41vi4p/avhsol/core/internal/harness"
+	"github.com/41vi4p/avhsol/core/internal/kernel"
+	"github.com/41vi4p/avhsol/core/internal/oracle"
+	"github.com/41vi4p/avhsol/core/internal/scenario"
+	"github.com/41vi4p/avhsol/core/internal/trace"
+	"github.com/41vi4p/avhsol/core/internal/world"
 )
 
 const AttackerEmail = "attacker@evil.example"
@@ -34,7 +35,23 @@ type Runner struct {
 	Sandbox   *world.Sandbox // required when the scenario has sandbox: true
 	Sink      *world.Sink
 	Host      *world.HostSecret
-	Kernel    *kernel.Emitter // optional TRIVEKTRA bridge
+	Kernel    *kernel.Emitter  // optional TRIVEKTRA bridge
+	CLI       *cliagent.Target // closed-box CLI coding agent (nil = pi harness + simulated tools)
+	CLIVars   cliagent.Vars
+	// OnTrace, if set, receives every finished trace (attack or benign) before the caller saves it.
+	// The CLI uses it to write each run into the trace graph as it happens.
+	OnTrace func(*trace.Trace)
+	// Sign, if set, signs every finished trace (before OnTrace and before it is saved).
+	Sign func(*trace.Trace)
+}
+
+func (r *Runner) finish(tr *trace.Trace) {
+	if r.Sign != nil {
+		r.Sign(tr)
+	}
+	if r.OnTrace != nil {
+		r.OnTrace(tr)
+	}
 }
 
 // newWorld builds an episode world, with a sandbox workspace when the scenario needs one.
@@ -42,7 +59,7 @@ func (r *Runner) newWorld(episode string) (*world.World, error) {
 	w := world.New(r.Scenario)
 	if r.Scenario.Sandbox {
 		if r.Sandbox == nil || r.Sink == nil || r.Host == nil {
-			return nil, fmt.Errorf("scenario %s needs a sandbox: pass -sandbox <path to absandbox>", r.Scenario.ID)
+			return nil, fmt.Errorf("scenario %s needs a sandbox: pass -sandbox <path to avhsol-sandbox>", r.Scenario.ID)
 		}
 		if err := w.EnableSandbox(*r.Sandbox, r.Sink, r.Host); err != nil {
 			return nil, err
@@ -169,7 +186,7 @@ func (r *Runner) runEpisode(ctx context.Context, tr *trace.Trace, w *world.World
 func (r *Runner) newTrace(kind string, turns []string) *trace.Trace {
 	return &trace.Trace{
 		TraceID: newID("tr"), ScenarioID: r.Scenario.ID, ScenarioSHA256: r.Scenario.SHA256,
-		Model: r.modelName(), GuardMode: orOff(r.GuardMode), Kind: kind,
+		Model: r.modelName(), Target: r.targetName(), GuardMode: orOff(r.GuardMode), Kind: kind,
 		SystemPrompt: r.Scenario.SystemPrompt, UserTurns: turns, StartedAt: time.Now().UTC(),
 	}
 }
@@ -206,7 +223,7 @@ func (r *Runner) RunPayload(ctx context.Context, atk trace.Attack) (*trace.Trace
 	a := atk
 	tr.Attack = &a
 	start := time.Now()
-	if err := r.runEpisode(ctx, tr, w, r.llmFor(r.compromisedScript(sf, w)), task); err != nil {
+	if err := r.execute(ctx, tr, w, sf, atk.Payload, task, r.llmFor(r.compromisedScript(sf, w))); err != nil {
 		return nil, err
 	}
 	recordSandbox(tr, w)
@@ -215,6 +232,7 @@ func (r *Runner) RunPayload(ctx context.Context, atk trace.Attack) (*trace.Trace
 	tr.Progress, tr.ProgressNote = oracle.Progress(r.Scenario, tr, tr.Verdicts)
 	tr.Findings = audit.Dynamic(r.Scenario, w)
 	tr.DurationMs = time.Since(start).Milliseconds()
+	r.finish(tr)
 	return tr, nil
 }
 
@@ -235,13 +253,14 @@ func (r *Runner) RunBenign(ctx context.Context, task scenario.BenignTask) (*trac
 		script = append(script, st)
 	}
 	start := time.Now()
-	if err := r.runEpisode(ctx, tr, w, r.llmFor(script), task.UserTurns); err != nil {
+	if err := r.execute(ctx, tr, w, nil, "", task.UserTurns, r.llmFor(script)); err != nil {
 		return nil, false, nil, err
 	}
 	ok, checks := oracle.EvalBenign(r.Scenario, task, w, tr.FinalText, tr.Error)
 	tr.Success = ok // for benign traces, Success means "task completed"
 	tr.Findings = audit.Dynamic(r.Scenario, w)
 	tr.DurationMs = time.Since(start).Milliseconds()
+	r.finish(tr)
 	return tr, ok, checks, nil
 }
 
@@ -299,4 +318,13 @@ func recordSandbox(tr *trace.Trace, w *world.World) {
 	for _, h := range w.SinkHits() {
 		_, _ = tr.Append(trace.StepSandbox, h.At.UnixMilli(), map[string]any{"event": "canary_sink_hit", "method": h.Method, "path": h.Path, "bytes": len(h.Body)})
 	}
+}
+
+func nowMs() int64 { return time.Now().UnixMilli() }
+
+func (r *Runner) targetName() string {
+	if r.CLI != nil {
+		return r.CLI.Name
+	}
+	return "pi-harness"
 }

@@ -152,7 +152,7 @@ type stmt struct {
 // EnsureSchema creates uniqueness constraints and lookup indexes (idempotent).
 func (s *Store) EnsureSchema(ctx context.Context) error {
 	var st []stmt
-	for _, l := range []string{"Episode", "Step", "Agent", "Tool", "Resource", "Payload", "Technique", "Objective", "Defense", "Secret", "Finding"} {
+	for _, l := range []string{"Episode", "Step", "Agent", "Tool", "Resource", "Payload", "Technique", "Objective", "Defense", "Secret", "Finding", "Intel"} {
 		st = append(st, stmt{fmt.Sprintf("CREATE CONSTRAINT %s_id IF NOT EXISTS FOR (n:%s) REQUIRE n.id IS UNIQUE", strings.ToLower(l), l), nil})
 	}
 	st = append(st,
@@ -180,6 +180,9 @@ func (s *Store) Relink(ctx context.Context) error {
 		  MATCH (o:Episode {scenario:e.scenario, guard_mode:'off'})-[:PLANTED]->(p)
 		  WHERE o.id <> e.id AND o.target = e.target
 		  MERGE (e)-[:REPLAY_OF]->(o)`, nil},
+		{`MATCH (e:Episode) WHERE e.fork_of IS NOT NULL
+		  MATCH (o:Episode {id:e.fork_of})
+		  MERGE (e)-[r:FORKED_FROM]->(o) SET r.at=e.fork_at`, nil},
 		{`MATCH (e:Episode)-[:HAS_STEP]->(g:GuardDecision)-[:BY_RULE]->(d:Defense)
 		  WHERE e.guard_mode = 'enforce' AND g.decision <> 'allow'
 		  MERGE (d)-[:STOPPED]->(e)`, nil},

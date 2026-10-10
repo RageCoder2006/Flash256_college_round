@@ -106,6 +106,15 @@ func (c *Client) PushPolicy(ctx context.Context, p Policy) error {
 	return c.do(ctx, "POST", "/v1/guard/policy", p, nil)
 }
 
+// SetCassette loads recorded model answers ({text, tool_calls:[{id,name,args}]}) for the proxy to serve, in order, to the
+// next model calls before the live model is used. Passing nil clears it.
+func (c *Client) SetCassette(ctx context.Context, exchanges []map[string]any) error {
+	if exchanges == nil {
+		exchanges = []map[string]any{}
+	}
+	return c.do(ctx, "POST", "/v1/guard/cassette", map[string]any{"exchanges": exchanges}, nil)
+}
+
 func (c *Client) Reset(ctx context.Context) error {
 	return c.do(ctx, "POST", "/v1/guard/reset", map[string]any{}, nil)
 }

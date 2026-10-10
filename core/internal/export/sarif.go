@@ -42,6 +42,7 @@ func SARIF(r *Report) ([]byte, error) {
 			"properties": map[string]any{
 				"traceId": f.TraceID, "reliability": f.Reliability, "runs": f.Runs, "owasp_agentic": f.ASI, "stopped_by": f.StoppedBy,
 				"guardedReplays": f.GuardedRuns, "guardedReplaysStillSucceeding": f.GuardedSucceeded,
+				"relatedIntel": intelIDs(f.Intel), "taxonomy": f.Taxonomy,
 			},
 		}
 		results = append(results, res)
@@ -70,3 +71,11 @@ func SARIF(r *Report) ([]byte, error) {
 
 // JSON is the full report.
 func JSON(r *Report) ([]byte, error) { return json.MarshalIndent(r, "", "  ") }
+
+func intelIDs(refs []IntelRef) []string {
+	var out []string
+	for _, r := range refs {
+		out = append(out, r.ID)
+	}
+	return out
+}

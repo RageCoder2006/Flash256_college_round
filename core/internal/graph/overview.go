@@ -24,6 +24,8 @@ func nodeKey(kind, id string) string {
 		return "def:" + id
 	case "Tool":
 		return "tool:" + id
+	case "Intel":
+		return "intel:" + id
 	}
 	return id // Step
 }
@@ -118,7 +120,7 @@ func (s *Store) Overview(ctx context.Context, f Filter, maxEpisodes int) (*Subgr
 		UNWIND $ids AS id
 		MATCH (e:Episode {id:id})
 		OPTIONAL MATCH (d:Defense)-[:STOPPED]->(e)
-		OPTIONAL MATCH (e)-[:REPLAY_OF]->(o:Episode)
+		OPTIONAL MATCH (e)-[:REPLAY_OF|FORKED_FROM]->(o:Episode)
 		RETURN id, collect(DISTINCT d.id) AS defs, collect(DISTINCT o.id) AS replays`, map[string]any{"ids": ids})
 	if err != nil {
 		return nil, err
@@ -138,6 +140,11 @@ func (s *Store) Overview(ctx context.Context, f Filter, maxEpisodes int) (*Subgr
 					edge(ek, nodeKey("Episode", asStr(o)), "REPLAY_OF")
 				}
 			}
+		}
+	}
+	if f.Intel {
+		if err := s.intelOverview(ctx, g, seen, ids, 25); err != nil {
+			return nil, err
 		}
 	}
 	return g, nil

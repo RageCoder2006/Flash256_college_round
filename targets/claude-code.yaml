@@ -1,0 +1,27 @@
+# Claude Code (Anthropic wire). The proxy serves /v1/messages and translates to whatever OpenAI-compatible model AVHSOL is
+# configured with (set AVHSOL_UPSTREAM_MODEL on avhsol-proxy to the model id to use). Claude Code is pointed at the proxy with
+# ANTHROPIC_BASE_URL, so its only route to a model is the guard.
+#
+# UNTESTED against the real Claude Code CLI: the Anthropic translation is unit-tested and was exercised end to end against a mock
+# upstream, but this command line and the paths below have not been run here. Check `claude --help` for your version.
+name: claude-code
+wire: anthropic
+command:
+  - claude
+  - -p
+  - "{task}"
+  - --permission-mode
+  - bypassPermissions
+  - --max-turns
+  - "12"
+env:
+  ANTHROPIC_BASE_URL: "{proxy_url}"
+  ANTHROPIC_API_KEY: "{api_key}"
+  HOME: "{workspace}/.home"
+  PATH: "{env:PATH}"
+  DISABLE_AUTOUPDATER: "1"
+  DISABLE_TELEMETRY: "1"
+ro_paths: ["{env:CLAUDE_INSTALL_DIR}", /proc, /sys]
+timeout_sec: 420
+untrusted_tools: ["*"]
+tool_aliases: {Bash: bash, Read: read_document}

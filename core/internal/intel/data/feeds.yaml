@@ -1,0 +1,8 @@
+# Research feeds read as Atom. These are leads for attack ideas, stored as Kind "paper" and never as findings.
+feeds:
+  - name: arxiv-prompt-injection
+    url: "https://export.arxiv.org/api/query?search_query=all:%22prompt+injection%22+AND+cat:cs.CR&sortBy=submittedDate&sortOrder=descending&max_results=40"
+  - name: arxiv-agent-security
+    url: "https://export.arxiv.org/api/query?search_query=all:%22LLM+agent%22+AND+all:security+AND+cat:cs.CR&sortBy=submittedDate&sortOrder=descending&max_results=40"
+  - name: arxiv-mcp
+    url: "https://export.arxiv.org/api/query?search_query=all:%22model+context+protocol%22&sortBy=submittedDate&sortOrder=descending&max_results=25"

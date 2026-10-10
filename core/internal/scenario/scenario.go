@@ -97,6 +97,9 @@ type Scenario struct {
 	Objectives      []Objective           `yaml:"objectives" json:"objectives"`
 	BenignTasks     []BenignTask          `yaml:"benign_tasks" json:"benign_tasks"`
 
+	// Generated is true when `avhsol scengen` wrote this scenario from a tool list rather than a person. The report says so.
+	Generated bool `yaml:"generated,omitempty" json:"generated,omitempty"`
+
 	SHA256 string `yaml:"-" json:"-"`
 }
 

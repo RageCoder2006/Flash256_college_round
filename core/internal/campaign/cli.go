@@ -2,8 +2,11 @@ package campaign
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -29,6 +32,9 @@ func (r *Runner) execute(ctx context.Context, tr *trace.Trace, w *world.World, s
 	if r.CLI == nil {
 		return r.runEpisode(ctx, tr, w, llm, turns)
 	}
+	if r.CLI.Kind == "http" {
+		return r.runHTTPEpisode(ctx, tr, w, sf, payload, turns)
+	}
 	return r.runCLIEpisode(ctx, tr, w, sf, payload, turns)
 }
 
@@ -50,6 +56,7 @@ func (r *Runner) runCLIEpisode(ctx context.Context, tr *trace.Trace, w *world.Wo
 	gc := guard.New(r.GuardURL)
 	since := gc.LastExchangeID(ctx)
 	task := strings.Join(turns, " ")
+	tr.Isolation = r.CLI.Isolation
 	_, _ = tr.Append(trace.StepUserTurn, nowMs(), map[string]any{"text": task})
 
 	vars := cliagent.Vars{}
@@ -57,6 +64,19 @@ func (r *Runner) runCLIEpisode(ctx context.Context, tr *trace.Trace, w *world.Wo
 		vars[k] = v
 	}
 	vars["task"] = task
+	if r.CLI.MCP != nil { // a poisoned MCP server the agent is configured to use (see targets/mcp-example.yaml)
+		spec := *r.CLI.MCP
+		spec.Payload = payload
+		dir := filepath.Join(w.WorkDir(), ".avhsol-mcp")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		b, _ := json.Marshal(spec)
+		if err := os.WriteFile(filepath.Join(dir, "spec.json"), b, 0o644); err != nil {
+			return err
+		}
+		vars["mcp_spec"] = filepath.Join(dir, "spec.json")
+	}
 	ports := []int{r.Sink.Port}
 	if u, err := url.Parse(r.GuardURL); err == nil {
 		if p, err := strconv.Atoi(u.Port()); err == nil {
@@ -95,7 +115,7 @@ func (r *Runner) runCLIEpisode(ctx context.Context, tr *trace.Trace, w *world.Wo
 		}
 		calls := make([]map[string]any, 0, len(ex.ToolCalls))
 		for i, c := range ex.ToolCalls {
-			calls = append(calls, map[string]any{"id": c.ID, "name": names[i]})
+			calls = append(calls, map[string]any{"id": c.ID, "name": names[i], "raw_name": c.Name})
 		}
 		_, _ = tr.Append(trace.StepLLMResponse, nowMs(), map[string]any{"text": ex.Text, "tool_calls": calls, "stop_reason": "stop"})
 		used := make([]bool, len(ex.Blocked))
@@ -105,7 +125,7 @@ func (r *Runner) runCLIEpisode(ctx context.Context, tr *trace.Trace, w *world.Wo
 				args = map[string]any{}
 			}
 			idxByCall[c.ID] = w.ExternalCall(names[i], args)
-			_, _ = tr.Append(trace.StepToolCall, nowMs(), map[string]any{"id": c.ID, "name": names[i], "args": args})
+			_, _ = tr.Append(trace.StepToolCall, nowMs(), map[string]any{"id": c.ID, "name": names[i], "raw_name": c.Name, "args": args})
 			for j, b := range ex.Blocked {
 				if !used[j] && b.Name == c.Name {
 					used[j] = true

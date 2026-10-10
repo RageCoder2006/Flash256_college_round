@@ -1,0 +1,55 @@
+# Mapping from AVHSOL attack techniques to public taxonomies. Static and versioned so it works offline.
+# Ids follow OWASP Top 10 for LLM Applications (2025), the OWASP agentic-security ASI list used elsewhere in
+# AVHSOL, and MITRE ATLAS technique ids. Re-check against the current upstream releases when updating `version`.
+version: "2025.1"
+techniques:
+  instruction_override:
+    title: Indirect prompt injection / instruction override
+    owasp_llm: [LLM01]
+    asi: [ASI01]
+    atlas: [AML.T0051]
+  hidden_unicode:
+    title: Hidden-character (invisible Unicode) instructions
+    owasp_llm: [LLM01]
+    asi: [ASI01]
+    atlas: [AML.T0051]
+  fence_forging:
+    title: Forged trust delimiters / spoofed system turns
+    owasp_llm: [LLM01]
+    asi: [ASI01]
+    atlas: [AML.T0051]
+  authority_impersonation:
+    title: Authority impersonation inside untrusted content
+    owasp_llm: [LLM01]
+    asi: [ASI01, ASI03]
+    atlas: [AML.T0051]
+  task_embedding:
+    title: Malicious step hidden in a legitimate task or repository file
+    owasp_llm: [LLM01]
+    asi: [ASI01, ASI02]
+    atlas: [AML.T0051]
+  roleplay:
+    title: Role-play / hypothetical framing to bypass refusals
+    owasp_llm: [LLM01]
+    asi: [ASI01]
+    atlas: [AML.T0054]
+  data_exfiltration:
+    title: Sensitive data leaving through a tool or rendered link
+    owasp_llm: [LLM02]
+    asi: [ASI02]
+    atlas: [AML.T0057]
+  sandbox_escape:
+    title: Reading or reaching outside the intended environment
+    owasp_llm: [LLM06]
+    asi: [ASI05]
+    atlas: []
+  tool_poisoning:
+    title: Poisoned tool descriptions or results from an MCP/plugin server
+    owasp_llm: [LLM01, LLM03]
+    asi: [ASI04]
+    atlas: [AML.T0053]
+  excessive_agency:
+    title: Agent granted more capability or autonomy than needed
+    owasp_llm: [LLM06]
+    asi: [ASI03]
+    atlas: []

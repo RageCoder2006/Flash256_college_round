@@ -155,6 +155,7 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, map[string]any{"skeletons": export.BuiltinSkeletons(), "formats": export.Formats, "pdf": export.PDFAvailable()})
 	})
 	s.graphRoutes(mux)
+	s.intelRoutes(mux)
 	return secure(cors(mux))
 }
 
@@ -408,12 +409,14 @@ func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
 }
 
 type startReq struct {
-	Kind       string `json:"kind"` // campaign | validate | hunt
+	Kind       string `json:"kind"` // campaign | validate | hunt | fork
 	Offline    *bool  `json:"offline"`
 	Budget     int    `json:"budget"`
 	VsDefense  bool   `json:"vs_defense"`
 	GuardMode  string `json:"guard"`
 	Regression bool   `json:"regress"`
+	Trace      string `json:"trace"` // fork: the recorded trace to fork
+	At         int    `json:"at"`    // fork: the step to fork at
 }
 
 func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
@@ -433,7 +436,7 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 	if req.Offline != nil {
 		offline = *req.Offline
 	}
-	if offline {
+	if offline && req.Kind != "fork" { // a fork needs a real model
 		args = append(args, "-offline")
 	}
 	if s.cfg.GuardURL != "" {
@@ -448,6 +451,15 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 			args = append(args, "-regress")
 		}
 	case "validate":
+	case "fork":
+		if !safeID(req.Trace) || req.At < 0 {
+			http.Error(w, "fork needs trace (an id) and at (a step number)", http.StatusBadRequest)
+			return
+		}
+		args = append(args, "-trace", req.Trace, "-at", fmt.Sprint(req.At))
+		if req.GuardMode == "monitor" || req.GuardMode == "enforce" {
+			args = append(args, "-guard", req.GuardMode)
+		}
 	case "hunt":
 		b := req.Budget
 		if b < 1 || b > 500 {
@@ -458,7 +470,7 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 			args = append(args, "-vs-defense")
 		}
 	default:
-		http.Error(w, "kind must be campaign|validate|hunt", http.StatusBadRequest)
+		http.Error(w, "kind must be campaign|validate|hunt|fork", http.StatusBadRequest)
 		return
 	}
 	s.mu.Lock()

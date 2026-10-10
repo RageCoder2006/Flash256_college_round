@@ -1,7 +1,9 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -44,7 +46,7 @@ func clockFrom(r *http.Request) (graph.Clock, error) {
 
 func filterFrom(r *http.Request) graph.Filter {
 	q := r.URL.Query()
-	return graph.Filter{Scenario: q.Get("scenario"), Target: q.Get("target"), Model: q.Get("model"), IncludeSimulated: q.Get("simulated") == "1"}
+	return graph.Filter{Scenario: q.Get("scenario"), Target: q.Get("target"), Model: q.Get("model"), IncludeSimulated: q.Get("simulated") == "1", Intel: q.Get("intel") == "1"}
 }
 
 func safeID(id string) bool { return id != "" && len(id) < 80 && !strings.ContainsAny(id, "/\\ \n") }
@@ -229,6 +231,22 @@ func (s *Server) graphRoutes(mux *http.ServeMux) {
 			return
 		}
 		writeJSON(w, n)
+	})
+	// Live revive: re-walk a recorded run to just before a step and let the model take over. It starts a run like any
+	// other (operator role, audited, one at a time) and needs a real model, never the simulated one.
+	h(mux, "POST /api/graph/episodes/{id}/fork", RoleOperator, func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			At    int    `json:"at"`
+			Guard string `json:"guard"`
+		}
+		if !safeID(r.PathValue("id")) || json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&b) != nil || b.At < 0 {
+			http.Error(w, "send {at: step number, guard: monitor|enforce (optional)}", http.StatusBadRequest)
+			return
+		}
+		body, _ := json.Marshal(startReq{Kind: "fork", Trace: r.PathValue("id"), At: b.At, GuardMode: b.Guard})
+		r2 := r.Clone(r.Context())
+		r2.Body = io.NopCloser(bytes.NewReader(body))
+		s.startRun(w, r2)
 	})
 	h(mux, "POST /api/graph/correct", RoleAnalyst, func(w http.ResponseWriter, r *http.Request) {
 		if !s.needGraph(w) {

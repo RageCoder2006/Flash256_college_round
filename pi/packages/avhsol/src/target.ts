@@ -2,6 +2,7 @@ import { Agent, type AgentEvent } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { GuardClient } from "./guard.ts";
 import type { EpisodeResult, EpisodeSpec, Step, StepType } from "./protocol.ts";
+import { buildHistory } from "./history.ts";
 import { buildLlm } from "./provider.ts";
 import { type ToolDetails, buildTools } from "./tools.ts";
 import { WorldClient } from "./world-client.ts";
@@ -31,6 +32,8 @@ export async function runEpisode(spec: EpisodeSpec, onStep?: StepSink): Promise<
 	const guard = spec.guard && spec.guard.mode !== "off" ? new GuardClient(spec.guard) : undefined;
 	const { models, model, onPayload } = buildLlm(spec.llm);
 	const untrustedSources = new Set<string>();
+	const hist = spec.history?.length ? buildHistory(spec.history, { api: model.api, provider: model.provider, id: model.id }) : undefined;
+	for (const s of hist?.untrusted ?? []) untrustedSources.add(s);
 	let turns = 0;
 	let finalText = "";
 	let error: string | undefined;
@@ -38,7 +41,7 @@ export async function runEpisode(spec: EpisodeSpec, onStep?: StepSink): Promise<
 	const agent = new Agent({
 		streamFn: models.streamSimple.bind(models),
 		onPayload,
-		initialState: { systemPrompt: spec.system_prompt, model, tools: buildTools(spec.tools, world) },
+		initialState: { systemPrompt: spec.system_prompt, model, tools: buildTools(spec.tools, world), messages: hist?.messages as never },
 		beforeToolCall: async ({ toolCall, args }, signal) => {
 			push("tool_call", { id: toolCall.id, name: toolCall.name, args });
 			if (!guard) return undefined;
@@ -48,7 +51,7 @@ export async function runEpisode(spec: EpisodeSpec, onStep?: StepSink): Promise<
 					tool: toolCall.name,
 					args,
 					untrusted_sources: [...untrustedSources],
-					user_turns: spec.user_turns,
+					user_turns: spec.all_user_turns ?? spec.user_turns,
 				},
 				signal,
 			);
@@ -91,11 +94,16 @@ export async function runEpisode(spec: EpisodeSpec, onStep?: StepSink): Promise<
 	});
 
 	try {
+		if (hist && hist.messages.length > 0) {
+			// Live revive: ask the model to continue from the recorded point, then carry on with any remaining user turns.
+			await agent.continue();
+			await agent.waitForIdle();
+		}
 		for (const userTurn of spec.user_turns) {
+			if (spec.max_turns && turns >= spec.max_turns) break;
 			push("user_turn", { text: userTurn });
 			await agent.prompt(userTurn);
 			await agent.waitForIdle();
-			if (spec.max_turns && turns >= spec.max_turns) break;
 		}
 		const last = [...agent.state.messages].reverse().find((m) => m.role === "assistant") as AssistantMessage | undefined;
 		finalText = last ? assistantText(last) : "";

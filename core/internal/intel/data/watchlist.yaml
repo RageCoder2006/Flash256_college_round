@@ -1,0 +1,26 @@
+# Packages that make up typical agent stacks. OSV is queried for these and GHSA hits on them are kept even
+# when the advisory text never says "agent". Edit freely; a copy in the intel directory overrides this one.
+packages:
+  - {ecosystem: PyPI, name: langchain}
+  - {ecosystem: PyPI, name: langchain-core}
+  - {ecosystem: PyPI, name: langchain-community}
+  - {ecosystem: PyPI, name: langgraph}
+  - {ecosystem: PyPI, name: llama-index}
+  - {ecosystem: PyPI, name: llama-index-core}
+  - {ecosystem: PyPI, name: autogen}
+  - {ecosystem: PyPI, name: crewai}
+  - {ecosystem: PyPI, name: openai}
+  - {ecosystem: PyPI, name: anthropic}
+  - {ecosystem: PyPI, name: mcp}
+  - {ecosystem: PyPI, name: litellm}
+  - {ecosystem: PyPI, name: vllm}
+  - {ecosystem: PyPI, name: ollama}
+  - {ecosystem: PyPI, name: gradio}
+  - {ecosystem: npm, name: "@modelcontextprotocol/sdk"}
+  - {ecosystem: npm, name: langchain}
+  - {ecosystem: npm, name: "@langchain/core"}
+  - {ecosystem: npm, name: openai}
+  - {ecosystem: npm, name: "@anthropic-ai/sdk"}
+  - {ecosystem: npm, name: "@anthropic-ai/claude-code"}
+  - {ecosystem: npm, name: ai}
+  - {ecosystem: Go, name: github.com/ollama/ollama}

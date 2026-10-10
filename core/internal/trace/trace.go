@@ -58,31 +58,43 @@ type Attack struct {
 	Encoding  string `json:"encoding,omitempty"`
 	Payload   string `json:"payload"`
 	ParentID  string `json:"parent_id,omitempty"`
+	// IntelRef is the advisory or paper (GHSA-..., CVE-..., arXiv id) the seed was derived from, if any.
+	// It says where the idea came from; it is not evidence that the same bug exists in the target.
+	IntelRef string `json:"intel_ref,omitempty"`
 }
 
 type Trace struct {
-	TraceID        string     `json:"trace_id"`
-	ScenarioID     string     `json:"scenario_id"`
-	ScenarioSHA256 string     `json:"scenario_sha256"`
-	Model          string     `json:"model"`
-	Target         string     `json:"target,omitempty"` // which agent was under test (pi-harness, a CLI target name, ...)
-	GuardMode      string     `json:"guard_mode"`
-	PolicyHash     string     `json:"policy_hash,omitempty"`
-	Kind           string     `json:"kind"` // attack | benign
-	Attack         *Attack    `json:"attack,omitempty"`
-	SystemPrompt   string     `json:"system_prompt"`
-	UserTurns      []string   `json:"user_turns"`
-	Steps          []Step     `json:"steps"`
-	Verdicts       []Verdict  `json:"verdicts"`
-	Findings       []Finding  `json:"findings"`
-	Success        bool       `json:"success"`  // any attack objective achieved
-	Progress       int        `json:"progress"` // 0..5 deterministic attack progress
-	ProgressNote   string     `json:"progress_note,omitempty"`
-	FinalText      string     `json:"final_text"`
-	Error          string     `json:"error,omitempty"`
-	StartedAt      time.Time  `json:"started_at"`
-	Signature      *Signature `json:"signature,omitempty"`
-	DurationMs     int64      `json:"duration_ms"`
+	TraceID        string `json:"trace_id"`
+	ScenarioID     string `json:"scenario_id"`
+	ScenarioSHA256 string `json:"scenario_sha256"`
+	Model          string `json:"model"`
+	Target         string `json:"target,omitempty"` // which agent was under test (pi-harness, a CLI target name, ...)
+	// Observability says how much of the agent could be seen: "" or "wire" = every model exchange and tool call,
+	// "blackbox" = only its answers and effects on the outside world (HTTP agents).
+	Observability string `json:"observability,omitempty"`
+	// Isolation is how the agent was confined: "landlock" (host kernel, Landlock + seccomp) or "gvisor" (user-space kernel, no network).
+	Isolation string `json:"isolation,omitempty"`
+	// ForkOf/ForkAt/ForkNote mark a live revive: this run re-walked ForkOf up to just before step ForkAt, then the model took over.
+	ForkOf       string     `json:"fork_of,omitempty"`
+	ForkAt       int        `json:"fork_at,omitempty"`
+	ForkNote     string     `json:"fork_note,omitempty"`
+	GuardMode    string     `json:"guard_mode"`
+	PolicyHash   string     `json:"policy_hash,omitempty"`
+	Kind         string     `json:"kind"` // attack | benign
+	Attack       *Attack    `json:"attack,omitempty"`
+	SystemPrompt string     `json:"system_prompt"`
+	UserTurns    []string   `json:"user_turns"`
+	Steps        []Step     `json:"steps"`
+	Verdicts     []Verdict  `json:"verdicts"`
+	Findings     []Finding  `json:"findings"`
+	Success      bool       `json:"success"`  // any attack objective achieved
+	Progress     int        `json:"progress"` // 0..5 deterministic attack progress
+	ProgressNote string     `json:"progress_note,omitempty"`
+	FinalText    string     `json:"final_text"`
+	Error        string     `json:"error,omitempty"`
+	StartedAt    time.Time  `json:"started_at"`
+	Signature    *Signature `json:"signature,omitempty"`
+	DurationMs   int64      `json:"duration_ms"`
 }
 
 // Signature binds a trace to the platform key that produced it (see internal/sign).

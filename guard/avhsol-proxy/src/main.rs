@@ -4,6 +4,7 @@
 //!   GET|POST /v1/guard/mode     off | monitor | enforce
 //!   GET|POST /v1/guard/policy   current policy (JSON); scenario capabilities are pushed here
 //!   GET /v1/guard/events        recent decisions;  GET /metrics
+mod anthropic;
 mod state;
 mod wire;
 
@@ -48,9 +49,11 @@ async fn main() {
         .route("/v1/guard/policy", get(get_policy).post(set_policy))
         .route("/v1/guard/events", get(events))
         .route("/v1/guard/reset", post(reset))
+        .route("/v1/guard/cassette", get(get_cassette).post(set_cassette))
         .route("/v1/guard/exchanges", get(exchanges))
         .route("/v1/chat/completions", post(chat))
         .route("/chat/completions", post(chat))
+        .route("/v1/messages", post(messages))
         .fallback(passthrough)
         .with_state(shared);
 
@@ -149,6 +152,47 @@ async fn reset(State(s): State<Arc<Shared>>) -> Json<Value> {
     Json(json!({"ok": true}))
 }
 
+#[derive(Deserialize)]
+struct CassetteBody {
+    exchanges: Vec<Value>,
+}
+
+/// Loads recorded model answers: the next N model calls get these (in order) instead of reaching the model, so a
+/// closed-box agent re-walks a recorded run up to a chosen point and the live model takes over after it.
+async fn set_cassette(State(s): State<Arc<Shared>>, Json(b): Json<CassetteBody>) -> Json<Value> {
+    s.set_cassette(b.exchanges);
+    Json(json!({"remaining": s.cassette_len()}))
+}
+
+async fn get_cassette(State(s): State<Arc<Shared>>) -> Json<Value> {
+    Json(json!({"remaining": s.cassette_len()}))
+}
+
+/// Builds the OpenAI-shaped answer for a recorded exchange {text, tool_calls:[{id,name,args}]}.
+fn cassette_response(rec: &Value) -> Value {
+    let text = rec.get("text").and_then(Value::as_str).unwrap_or("");
+    let calls: Vec<Value> = rec
+        .get("tool_calls")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .map(|c| {
+            json!({"id": c.get("id").cloned().unwrap_or(json!("call_cassette")), "type": "function",
+                   "function": {"name": c.get("name").cloned().unwrap_or(json!("")),
+                                "arguments": serde_json::to_string(c.get("args").unwrap_or(&json!({}))).unwrap_or_else(|_| "{}".into())}})
+        })
+        .collect();
+    let mut msg = json!({"role": "assistant", "content": if text.is_empty() && !calls.is_empty() { Value::Null } else { json!(text) }});
+    let has_calls = !calls.is_empty();
+    if has_calls {
+        msg["tool_calls"] = Value::Array(calls);
+    }
+    json!({"id": "chatcmpl-cassette", "object": "chat.completion", "model": "cassette", "created": 0,
+           "choices": [{"index": 0, "finish_reason": if has_calls { "tool_calls" } else { "stop" }, "message": msg}],
+           "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}})
+}
+
 async fn metrics(State(s): State<Arc<Shared>>) -> Json<Value> {
     Json(s.metrics_json())
 }
@@ -192,43 +236,53 @@ fn sanitize_request(s: &Shared, body: &mut Value) {
     }
 }
 
-async fn chat(State(s): State<Arc<Shared>>, headers: HeaderMap, body: bytes::Bytes) -> Response {
+/// The shared pipeline for both wire formats: take an OpenAI-shaped request, apply the guard (sanitise untrusted
+/// results, record, strip denied tool calls) around the upstream call, and return the OpenAI-shaped answer.
+/// `Err` carries a ready response for failures (including upstream non-2xx, passed through unchanged).
+async fn exchange(s: &Shared, auth: Option<header::HeaderValue>, mut payload: Value) -> Result<Value, Response> {
     let t0 = Instant::now();
     if s.upstream.is_empty() {
-        return (StatusCode::BAD_GATEWAY, "AVHSOL_UPSTREAM is not set").into_response();
+        return Err((StatusCode::BAD_GATEWAY, "AVHSOL_UPSTREAM is not set").into_response());
     }
-    let mut payload: Value = match serde_json::from_slice(&body) {
-        Ok(v) => v,
-        Err(e) => return (StatusCode::BAD_REQUEST, format!("bad json: {e}")).into_response(),
-    };
     let mode = s.mode();
     let policy = s.policy.read().unwrap().clone();
     // What the agent saw this turn (before any sanitising), for the trace and for provenance.
     let ctx = wire::read_request(&payload, &policy);
-    let wants_stream = payload.get("stream").and_then(Value::as_bool).unwrap_or(false);
     // Always fetch the full answer so tool calls can be inspected before the agent receives them.
     payload["stream"] = Value::Bool(false);
     if let Some(o) = payload.as_object_mut() {
         o.remove("stream_options");
     }
+    if let Some(rec) = s.pop_cassette() {
+        // A replayed part of a recorded run: serve the recorded answer, never reach the model, never strip it.
+        let resp = cassette_response(&rec);
+        let calls: Vec<wire::ToolCallRec> = rec
+            .get("tool_calls")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .map(|c| wire::ToolCallRec {
+                id: c.get("id").and_then(Value::as_str).unwrap_or("").to_string(),
+                name: c.get("name").and_then(Value::as_str).unwrap_or("").to_string(),
+                args: c.get("args").cloned().unwrap_or(json!({})),
+            })
+            .collect();
+        s.record_exchange(&ctx.tool_results, rec.get("text").and_then(Value::as_str).unwrap_or(""), &calls, &[]);
+        return Ok(resp);
+    }
     if mode == Mode::Enforce {
-        sanitize_request(&s, &mut payload);
+        sanitize_request(s, &mut payload);
     }
     let url = format!("{}/chat/completions", s.upstream.trim_end_matches('/'));
     let mut rb = s.http.post(url).json(&payload);
-    if let Some(a) = headers.get(header::AUTHORIZATION) {
+    if let Some(a) = auth {
         rb = rb.header(header::AUTHORIZATION, a);
     }
-    let up = match rb.send().await {
-        Ok(r) => r,
-        Err(e) => return (StatusCode::BAD_GATEWAY, format!("upstream: {e}")).into_response(),
-    };
+    let up = rb.send().await.map_err(|e| (StatusCode::BAD_GATEWAY, format!("upstream: {e}")).into_response())?;
     let status = StatusCode::from_u16(up.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
     let ct = up.headers().get(header::CONTENT_TYPE).cloned();
-    let raw = match up.bytes().await {
-        Ok(b) => b,
-        Err(e) => return (StatusCode::BAD_GATEWAY, format!("upstream body: {e}")).into_response(),
-    };
+    let raw = up.bytes().await.map_err(|e| (StatusCode::BAD_GATEWAY, format!("upstream body: {e}")).into_response())?;
     // time spent waiting on the model: dominated by model latency, NOT guard overhead
     s.record_proxy_overhead(t0.elapsed().as_micros() as u64);
     let raw_response = |raw: bytes::Bytes| {
@@ -240,9 +294,9 @@ async fn chat(State(s): State<Arc<Shared>>, headers: HeaderMap, body: bytes::Byt
         r
     };
     if !status.is_success() {
-        return raw_response(raw);
+        return Err(raw_response(raw));
     }
-    let Ok(mut resp) = serde_json::from_slice::<Value>(&raw) else { return raw_response(raw) };
+    let Ok(mut resp) = serde_json::from_slice::<Value>(&raw) else { return Err(raw_response(raw)) };
     let g0 = Instant::now();
     let done = wire::process_response(&mut resp, &ctx, &policy, mode);
     let micros = g0.elapsed().as_micros() as u64;
@@ -250,6 +304,19 @@ async fn chat(State(s): State<Arc<Shared>>, headers: HeaderMap, body: bytes::Byt
         s.record_decision(req, d, micros);
     }
     s.record_exchange(&ctx.tool_results, &done.text, &done.calls, &done.blocked);
+    Ok(resp)
+}
+
+async fn chat(State(s): State<Arc<Shared>>, headers: HeaderMap, body: bytes::Bytes) -> Response {
+    let payload: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(e) => return (StatusCode::BAD_REQUEST, format!("bad json: {e}")).into_response(),
+    };
+    let wants_stream = payload.get("stream").and_then(Value::as_bool).unwrap_or(false);
+    let resp = match exchange(&s, headers.get(header::AUTHORIZATION).cloned(), payload).await {
+        Ok(r) => r,
+        Err(r) => return r,
+    };
     if wants_stream {
         let mut r = Response::new(Body::from(wire::to_sse(&resp)));
         r.headers_mut().insert(header::CONTENT_TYPE, "text/event-stream".parse().unwrap());
@@ -258,4 +325,61 @@ async fn chat(State(s): State<Arc<Shared>>, headers: HeaderMap, body: bytes::Byt
     let mut r = Response::new(Body::from(serde_json::to_vec(&resp).unwrap_or_default()));
     r.headers_mut().insert(header::CONTENT_TYPE, "application/json".parse().unwrap());
     r
+}
+
+/// Anthropic Messages API entry point (Claude Code and other Anthropic-wire agents).
+/// AVHSOL_UPSTREAM_MODEL, if set, replaces the Claude model name the agent asks for.
+async fn messages(State(s): State<Arc<Shared>>, headers: HeaderMap, body: bytes::Bytes) -> Response {
+    let err = |status: StatusCode, kind: &str, msg: &str| {
+        let mut r = Response::new(Body::from(anthropic::error_body(kind, msg).to_string()));
+        *r.status_mut() = status;
+        r.headers_mut().insert(header::CONTENT_TYPE, "application/json".parse().unwrap());
+        r
+    };
+    let areq: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(e) => return err(StatusCode::BAD_REQUEST, "invalid_request_error", &format!("bad json: {e}")),
+    };
+    let wants_stream = areq.get("stream").and_then(Value::as_bool).unwrap_or(false);
+    let asked_model = areq.get("model").and_then(Value::as_str).unwrap_or("").to_string();
+    let model_override = std::env::var("AVHSOL_UPSTREAM_MODEL").ok().filter(|m| !m.is_empty());
+    let oreq = anthropic::to_openai(&areq, model_override.as_deref());
+    // Anthropic SDKs authenticate with x-api-key; the upstream expects a bearer token.
+    let auth = headers
+        .get(header::AUTHORIZATION)
+        .cloned()
+        .or_else(|| headers.get("x-api-key").and_then(|k| k.to_str().ok()).and_then(|k| format!("Bearer {k}").parse().ok()));
+    let resp = match exchange(&s, auth, oreq).await {
+        Ok(r) => r,
+        Err(r) => {
+            let st = r.status();
+            let b = axum::body::to_bytes(r.into_body(), 1 << 20).await.unwrap_or_default();
+            return err(st, "api_error", String::from_utf8_lossy(&b).chars().take(300).collect::<String>().as_str());
+        }
+    };
+    let msg = anthropic::from_openai(&resp, &asked_model);
+    if wants_stream {
+        let mut r = Response::new(Body::from(anthropic::to_sse(&msg)));
+        r.headers_mut().insert(header::CONTENT_TYPE, "text/event-stream".parse().unwrap());
+        return r;
+    }
+    let mut r = Response::new(Body::from(msg.to_string()));
+    r.headers_mut().insert(header::CONTENT_TYPE, "application/json".parse().unwrap());
+    r
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cassette_response_carries_text_and_tool_calls() {
+        let r = cassette_response(&json!({"text": "", "tool_calls": [{"id": "c1", "name": "bash", "args": {"command": "ls"}}]}));
+        assert_eq!(r["choices"][0]["finish_reason"], "tool_calls");
+        assert_eq!(r["choices"][0]["message"]["tool_calls"][0]["function"]["name"], "bash");
+        assert_eq!(r["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"], "{\"command\":\"ls\"}");
+        let t = cassette_response(&json!({"text": "done", "tool_calls": []}));
+        assert_eq!(t["choices"][0]["finish_reason"], "stop");
+        assert_eq!(t["choices"][0]["message"]["content"], "done");
+    }
 }

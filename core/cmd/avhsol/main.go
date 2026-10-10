@@ -54,6 +54,11 @@ commands:
   audit      static permission audit of a scenario
   campaign   run seed attacks (and optionally the benign regression suite)
   policy-test  replay recorded traces through a policy: what it would have stopped, what it would break
+  intel      threat intel: sync GHSA/NVD/OSV/KEV/EPSS/research into a local cache, generate seeds, offline bundles
+  fork       live revive: re-walk a recorded run and let the model take over at a chosen step (guard/edits optional)
+  netfwd     (internal) port forwarder started inside gVisor containers
+  scengen    generate a test scenario from an agent's tool list (JSON file or live MCP server)
+  mcp-serve  run the poisoned MCP server used by mcp targets (stdio; started by the agent under test)
   graph      bitemporal trace graph (Neo4j) + vector store (Qdrant): init, ingest, stats, ask, ...
   report     LLM-written advisories for confirmed exploits (explanation only; verdicts stay deterministic)
   serve      dashboard API (traces, reports, guard control, launch runs)
@@ -84,6 +89,16 @@ func main() {
 		err = cmdPolicyTest(os.Args[2:])
 	case "graph":
 		err = cmdGraph(os.Args[2:])
+	case "intel":
+		err = cmdIntel(os.Args[2:])
+	case "fork":
+		err = cmdFork(os.Args[2:])
+	case "netfwd":
+		err = cmdNetFwd(os.Args[2:])
+	case "scengen":
+		err = cmdScengen(os.Args[2:])
+	case "mcp-serve":
+		err = cmdMCPServe(os.Args[2:])
 	case "report":
 		err = cmdReport(os.Args[2:])
 	case "serve":
@@ -181,6 +196,7 @@ func envOr(k, d string) string {
 
 type common struct {
 	scPath, seedPath, outDir, guardURL, harnessCmd, llmURL, llmModel, llmKey string
+	isolation                                                                string
 	sandboxBin, kernelURL, thinking, targetPath                              string
 	repeats                                                                  int
 	offline, useGraph                                                        bool
@@ -200,6 +216,7 @@ func addCommon(fs *flag.FlagSet) *common {
 	fs.StringVar(&c.sandboxBin, "sandbox", envOr("AVHSOL_SANDBOX", "guard/target/release/avhsol-sandbox"), "avhsol-sandbox binary (used when the scenario has sandbox: true)")
 	fs.StringVar(&c.kernelURL, "kernel-otlp", os.Getenv("AVHSOL_KERNEL_OTLP"), "TRIVEKTRA OTLP receiver (e.g. http://127.0.0.1:4318): emit a span per sandboxed tool call")
 	fs.StringVar(&c.thinking, "target-thinking", "default", "target model chain-of-thought: default|off (off is faster; changes the target's behaviour)")
+	fs.StringVar(&c.isolation, "isolation", "", "how a -target agent is confined: landlock (default) or gvisor (Docker + runsc); overrides the target file")
 	fs.StringVar(&c.targetPath, "target", "", "CLI coding-agent target (targets/*.yaml); default: the pi harness with simulated tools")
 	fs.BoolVar(&c.useGraph, "graph", os.Getenv("AVHSOL_GRAPH") == "1", "write every trace into the Neo4j/Qdrant trace graph as it is produced (needs scripts/stack.sh up)")
 	fs.StringVar(&c.llmKey, "llm-key", os.Getenv("AVHSOL_LLM_API_KEY"), "API key (if any)")
@@ -216,7 +233,13 @@ type env struct {
 }
 
 func (c *common) setup(ctx context.Context, needGuard bool) (*env, error) {
-	if !c.offline && (c.llmURL == "" || c.llmModel == "") {
+	httpTarget := false // a black-box HTTP agent brings its own model: AVHSOL needs none to drive it
+	if c.targetPath != "" {
+		if t, err := cliagent.Load(c.targetPath); err == nil && t.Kind == "http" {
+			httpTarget = true
+		}
+	}
+	if !c.offline && !httpTarget && (c.llmURL == "" || c.llmModel == "") {
 		return nil, fmt.Errorf("need -llm-url and -llm-model (or AVHSOL_LLM_BASE_URL / AVHSOL_LLM_MODEL), or pass -offline")
 	}
 	if needGuard && c.guardURL == "" {
@@ -278,18 +301,38 @@ func (c *common) setup(ctx context.Context, needGuard bool) (*env, error) {
 			cleanup()
 			return nil, fmt.Errorf("-target needs a sandbox scenario (sandbox: true)")
 		}
-		if c.guardURL == "" {
-			cleanup()
-			return nil, fmt.Errorf("-target needs -guard-url: the guard proxy is the agent's only route to the model")
-		}
 		t, err := cliagent.Load(c.targetPath)
 		if err != nil {
 			cleanup()
 			return nil, err
 		}
+		if t.Kind != "http" && c.guardURL == "" {
+			cleanup()
+			return nil, fmt.Errorf("-target needs -guard-url: the guard proxy is the agent's only route to the model")
+		}
+		if c.isolation != "" {
+			if c.isolation != cliagent.IsolationLandlock && c.isolation != cliagent.IsolationGVisor {
+				cleanup()
+				return nil, fmt.Errorf("-isolation must be landlock or gvisor")
+			}
+			t.Isolation = c.isolation
+		}
+		if t.Isolation == cliagent.IsolationGVisor {
+			if err := cliagent.GVisorAvailable(ctx); err != nil {
+				cleanup()
+				return nil, err
+			}
+		}
 		r.CLI, r.CLIVars = t, cliVars(c)
 		r.CLIVars["sink_url"] = r.Sink.URL()
-		fmt.Printf("target: CLI agent %q (sandboxed, model traffic via %s)\n", t.Name, c.guardURL)
+		switch t.Kind {
+		case "http":
+			fmt.Printf("target: HTTP agent %q at %s (black box: tool calls are not observed, no guard in the path)\n", t.Name, t.HTTP.URL)
+		case "mcp":
+			fmt.Printf("target: CLI agent %q with a poisoned MCP server (sandboxed, %s wire via %s)\n", t.Name, t.Wire, c.guardURL)
+		default:
+			fmt.Printf("target: CLI agent %q (sandboxed, %s wire via %s)\n", t.Name, t.Wire, c.guardURL)
+		}
 	}
 	if c.kernelURL != "" {
 		r.Kernel = kernel.New(c.kernelURL)
@@ -417,6 +460,13 @@ func cmdCampaign(args []string) error {
 
 func cmdValidate(args []string) error {
 	fs := flag.NewFlagSet("validate", flag.ExitOnError)
+	for i, a := range args { // validate replays attacks through the guard proxy, which a black-box HTTP agent never touches
+		if (a == "-target" || a == "--target") && i+1 < len(args) {
+			if t, err := cliagent.Load(args[i+1]); err == nil && t.Kind == "http" {
+				return fmt.Errorf("validate needs the guard in the agent's model path, which a black-box HTTP target does not allow; use campaign or hunt for HTTP targets")
+			}
+		}
+	}
 	c := addCommon(fs)
 	ablate := fs.Bool("ablate", true, "knock out one defense at a time")
 	replayFrom := fs.String("replay-from", "", "reuse guard-off attack traces from this out dir instead of re-running the attack phase")
@@ -664,6 +714,10 @@ func cmdServe(args []string) error {
 // cliVars are the placeholders a CLI target definition can use.
 func cliVars(c *common) cliagent.Vars {
 	v := cliagent.Vars{"proxy_url": strings.TrimRight(c.guardURL, "/"), "api_key": c.llmKey, "model": c.llmModel}
+	if exe, err := os.Executable(); err == nil {
+		v["avhsol_bin"] = exe
+		v["avhsol_dir"] = filepath.Dir(exe)
+	}
 	if cwd, err := os.Getwd(); err == nil {
 		v["cwd"] = cwd
 		v["pi_dir"] = filepath.Join(cwd, "pi")

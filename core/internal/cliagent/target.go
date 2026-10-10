@@ -15,11 +15,25 @@ import (
 	"strings"
 	"time"
 
+	"github.com/41vi4p/avhsol/core/internal/httpagent"
+	"github.com/41vi4p/avhsol/core/internal/mcpagent"
 	"gopkg.in/yaml.v3"
 )
 
 type Target struct {
 	Name string `yaml:"name"`
+	// Kind is how the agent is run: "cli" (default: a command inside the sandbox, model traffic through the guard
+	// proxy), "mcp" (a cli target that is also given a poisoned MCP server), or "http" (a remote chat endpoint,
+	// observed as a black box).
+	Kind string `yaml:"kind"`
+	// Wire is the model API the agent speaks through the proxy: "openai" (default) or "anthropic" (point the agent's
+	// base URL at {proxy_url}; the proxy serves /v1/messages). Informational; the proxy serves both.
+	Wire string `yaml:"wire"`
+	// Isolation picks how the agent is confined: "landlock" (default) or "gvisor" (see gvisor.go). The -isolation flag overrides it.
+	Isolation string          `yaml:"isolation"`
+	GVisor    GVisorConfig    `yaml:"gvisor"`
+	HTTP      *httpagent.Spec `yaml:"http"`
+	MCP       *mcpagent.Spec  `yaml:"mcp"`
 	// Command is the argv to run. Placeholders: {task} {workspace} {proxy_url} {api_key} {model}
 	// {sink_url} {cwd} {node_dir} {env:NAME}.
 	Command []string          `yaml:"command"`
@@ -44,8 +58,47 @@ func Load(path string) (*Target, error) {
 	if err := yaml.Unmarshal(b, &t); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	if t.Name == "" || len(t.Command) == 0 {
-		return nil, fmt.Errorf("%s: target needs name and command", path)
+	if t.Kind == "" {
+		t.Kind = "cli"
+	}
+	if t.Wire == "" {
+		t.Wire = "openai"
+	}
+	if t.Wire != "openai" && t.Wire != "anthropic" {
+		return nil, fmt.Errorf("%s: wire must be openai or anthropic", path)
+	}
+	switch t.Kind {
+	case "cli", "mcp":
+		if t.Name == "" || len(t.Command) == 0 {
+			return nil, fmt.Errorf("%s: target needs name and command", path)
+		}
+		if t.Kind == "mcp" {
+			if t.MCP == nil {
+				t.MCP = &mcpagent.Spec{}
+			}
+			t.MCP.Defaults()
+			if err := t.MCP.Validate(); err != nil {
+				return nil, fmt.Errorf("%s: %w", path, err)
+			}
+		}
+	case "http":
+		if t.Name == "" || t.HTTP == nil {
+			return nil, fmt.Errorf("%s: an http target needs name and an http: block", path)
+		}
+		t.HTTP.Defaults()
+		if err := t.HTTP.Validate(); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		t.TimeoutSec = t.HTTP.TimeoutSec
+	default:
+		return nil, fmt.Errorf("%s: kind must be cli, mcp or http, not %q", path, t.Kind)
+	}
+	switch t.Isolation {
+	case "":
+		t.Isolation = IsolationLandlock
+	case IsolationLandlock, IsolationGVisor:
+	default:
+		return nil, fmt.Errorf("%s: isolation must be landlock or gvisor, not %q", path, t.Isolation)
 	}
 	if t.TimeoutSec == 0 {
 		t.TimeoutSec = 300
@@ -97,6 +150,9 @@ type Result struct {
 
 // Run executes the agent for one task inside the sandbox.
 func (t *Target) Run(ctx context.Context, sandboxBin, workspace string, ports []int, v Vars) Result {
+	if t.Isolation == IsolationGVisor {
+		return t.runGVisor(ctx, t.GVisor, workspace, ports, v)
+	}
 	v = copyVars(v)
 	v["workspace"] = workspace
 	for name, content := range t.SetupFiles {

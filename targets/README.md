@@ -16,3 +16,11 @@ format added to the proxy; their commands and the sandbox work the same way.
 
 Run:  avhsol campaign -scenario scenarios/devops-coder.yaml -seeds seeds/coding-seeds.yaml \
         -target targets/pi-coding-agent.yaml -guard-url http://127.0.0.1:7077
+
+## More target kinds (see docs/CONNECTORS.md)
+
+* `kind: http` (`http-example.yaml`): a remote chat endpoint, black box; no guard replay.
+* `kind: mcp` (`mcp-example.yaml`): a cli target plus a poisoned MCP server (`avhsol mcp-serve`).
+* `wire: anthropic` (`claude-code.yaml`): the proxy serves `/v1/messages`; point the agent's `ANTHROPIC_BASE_URL` at `{proxy_url}`.
+* `isolation: gvisor` or `-isolation gvisor`: run the agent in a no-network gVisor container instead of Landlock (docs/SANDBOX.md).
+* `shell-probe.yaml`: a scripted agent used to check that isolation backends behave identically.

@@ -15,6 +15,9 @@ type Seed struct {
 	ASI       []string `yaml:"asi" json:"asi"`
 	Encoding  string   `yaml:"encoding" json:"encoding"` // "" | unicode_tags | base64
 	Template  string   `yaml:"template" json:"template"`
+	// Ref and Source say which threat-intel item inspired a generated seed (empty for hand-written seeds).
+	Ref    string `yaml:"ref,omitempty" json:"ref,omitempty"`
+	Source string `yaml:"source,omitempty" json:"source,omitempty"`
 }
 
 type seedFile struct {

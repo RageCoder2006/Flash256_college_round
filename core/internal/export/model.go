@@ -40,7 +40,12 @@ type Finding struct {
 	StoppedBy        []string `json:"stopped_by,omitempty"`
 
 	Advisory *advisory.Advisory `json:"advisory,omitempty"`
-	Repro    string             `json:"reproduce"`
+
+	// IntelSeed is the advisory the attack seed was derived from, if any. Intel lists related public items.
+	IntelSeed string     `json:"intel_seed,omitempty"`
+	Intel     []IntelRef `json:"intel,omitempty"`
+	Taxonomy  []string   `json:"taxonomy,omitempty"` // OWASP LLM / ASI / ATLAS ids for the technique
+	Repro     string     `json:"reproduce"`
 }
 
 // Event is one row of an incident timeline: what happened, in order.
@@ -180,6 +185,10 @@ type Report struct {
 	HasDefense      bool             `json:"has_defense"`
 	HasControl      bool             `json:"has_control"`
 	HasAdvisories   bool             `json:"has_advisories"`
+	HasIntel        bool             `json:"has_intel"`
+	BlackBox        bool             `json:"black_box"`
+	Isolation       string           `json:"isolation,omitempty"`
+	Threat          *ThreatContext   `json:"threat_context,omitempty"`
 	Findings        []Finding        `json:"findings"`
 	Objectives      []ObjectiveRate  `json:"objectives"`
 	NotWorked       []string         `json:"techniques_that_did_not_work"`

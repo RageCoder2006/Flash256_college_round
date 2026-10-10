@@ -48,6 +48,10 @@ type EpisodeSpec struct {
 	UserTurns    []string   `json:"user_turns"`
 	MaxTurns     int        `json:"max_turns,omitempty"`
 	Guard        *GuardSpec `json:"guard,omitempty"`
+	// History starts the conversation from recorded steps (live revive); AllUserTurns is every user turn of the
+	// conversation, for the guard, while UserTurns are only the ones still to send.
+	History      []Step   `json:"history,omitempty"`
+	AllUserTurns []string `json:"all_user_turns,omitempty"`
 }
 
 type Step struct {

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/41vi4p/avhsol/core/internal/intel"
 	"github.com/41vi4p/avhsol/core/internal/trace"
 )
 
@@ -187,6 +188,45 @@ func TestActivationIsStrongestAtTheHitAndFadesWithDistance(t *testing.T) {
 	for k := range lvl {
 		if strings.Contains(k, other) {
 			t.Fatalf("an unrelated episode must stay dark, but %s is active", k)
+		}
+	}
+}
+
+func TestIntelNodesLinkTechniquesAndEpisodes(t *testing.T) {
+	st, ctx := openOrSkip(t)
+	id := fmt.Sprintf("itest-%d", time.Now().UnixNano())
+	cleanup(t, st, ctx, id)
+	t.Cleanup(func() {
+		_ = st.write(ctx, []stmt{{"MATCH (i:Intel) WHERE i.id STARTS WITH $p DETACH DELETE i", map[string]any{"p": "GHSA-" + id}}})
+	})
+	tr := fakeTrace(id, true)
+	tr.Attack.IntelRef = "GHSA-" + id
+	if _, err := st.IngestTrace(ctx, tr, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	n, err := st.IngestIntel(ctx, []intel.Item{{ID: "GHSA-" + id, Source: "ghsa", Kind: "advisory", Title: "t", Summary: "s", KEV: true, Tags: []string{"technique:" + id + "-tech"}}}, nil)
+	if err != nil || n != 1 {
+		t.Fatalf("ingest intel: %d %v", n, err)
+	}
+	g, err := st.Overview(ctx, Filter{Intel: true, Scenario: id + "-sc"}, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var node, motivates, inspired bool
+	for _, x := range g.Nodes {
+		node = node || (x.ID == "intel:GHSA-"+id && x.Flag == "kev")
+	}
+	for _, e := range g.Edges {
+		motivates = motivates || (e.Type == "MOTIVATES" && e.From == "intel:GHSA-"+id)
+		inspired = inspired || (e.Type == "INSPIRED_BY" && e.To == "intel:GHSA-"+id)
+	}
+	if !node || !motivates || !inspired {
+		t.Fatalf("intel layer incomplete: node=%v motivates=%v inspired=%v", node, motivates, inspired)
+	}
+	plain, _ := st.Overview(ctx, Filter{Scenario: id + "-sc"}, 5)
+	for _, x := range plain.Nodes {
+		if x.Kind == "intel" {
+			t.Fatal("intel must be opt-in")
 		}
 	}
 }

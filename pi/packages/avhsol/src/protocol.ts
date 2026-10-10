@@ -39,6 +39,14 @@ export interface EpisodeSpec {
 	user_turns: string[];
 	max_turns?: number;
 	guard?: GuardSpec;
+	/**
+	 * Recorded steps to start from instead of an empty conversation (live revive). They must end at a boundary: a
+	 * user turn or a tool result, with every tool call answered. The model is asked to continue from there, and only
+	 * the steps it produces from then on are returned.
+	 */
+	history?: Step[];
+	/** All the user's turns for the whole conversation, for the guard's provenance check; `user_turns` are the ones still to send. */
+	all_user_turns?: string[];
 }
 
 export type StepType = "user_turn" | "llm_response" | "tool_call" | "tool_result" | "guard";

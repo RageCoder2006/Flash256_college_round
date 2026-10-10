@@ -121,6 +121,7 @@ type Filter struct {
 	Target           string
 	Model            string
 	IncludeSimulated bool
+	Intel            bool // add the threat-intel layer to an overview
 }
 
 // where returns a Cypher boolean over episode alias `e` and its parameters.

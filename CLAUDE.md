@@ -17,7 +17,7 @@ trace → replay under the Rust guard → benign-task regression → defense abl
 | `dashboard/` | Next.js 16 / React 19. `/` landing, `/console/*` app. `lib/graph3d.ts`, `components/graph3d/NeuralGraph.tsx` |
 | `scenarios/`, `seeds/`, `targets/` | Target definitions, attack seeds, closed-box CLI agent specs |
 | `deploy/stack/` | docker compose for Neo4j + Qdrant; `.env` (mode 600, gitignored) holds DB creds and API tokens |
-| `docs/` | Handover docs + report engine docs (`REPORTS.md`) |
+| `docs/` | Handover docs: STATUS, ROADMAP, INTEL, CONNECTORS, SANDBOX, REVIVE, SCENARIOS, REPORTS, plus the approved plan |
 
 ## Commands
 ```
@@ -26,7 +26,9 @@ make test               # cargo test + go test ./... + vitest
 make pi-build           # once
 ./scripts/demo.sh       # stack + guard + API + dashboard (AVHSOL_OFFLINE=1 for the simulated model)
 cd dashboard && npx tsc --noEmit && npx next build
-cd core && go test ./...     # graph integration tests need the live Neo4j/Qdrant stack
+cd core && go test ./...     # graph integration tests need the live Neo4j/Qdrant stack; the gVisor test needs docker+runsc and core/bin/avhsol
+avhsol intel sync            # fetch threat intel (the only network command); avhsol intel -h for the rest
+avhsol scengen -tools t.json # scenario from a tool list; avhsol fork -trace ID -at N   # live revive
 ```
 
 ## Rules (do not break)
@@ -37,6 +39,9 @@ cd core && go test ./...     # graph integration tests need the live Neo4j/Qdran
 * Secrets are redacted to fingerprints before storage. Attacker-controlled text is always escaped when rendered.
 * Services bind loopback only. State-changing API requests are audited. Keep roles viewer < analyst < operator < admin.
 * Match surrounding style; keep Go formatted (`gofmt`) and `go vet` clean. Go is 1.22.2: `golang.org/x/net` is pinned to v0.28.0.
+
+* Threat-intel text is third-party data: never feed it to a model unquoted, never let it change a risk rating. Intel-derived seeds carry `ref`; they are ideas, not findings.
+* Only `avhsol intel sync` (and the admin `POST /api/intel/sync`) may use the network for intel; nothing fetches during a run.
 
 ## Gotchas
 * Reasoning model: send `chat_template_kwargs.enable_thinking=false` for attacker/analyst/ask calls. Context is 8192 tokens.

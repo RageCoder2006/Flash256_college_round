@@ -38,6 +38,7 @@ type Runner struct {
 	Kernel    *kernel.Emitter  // optional TRIVEKTRA bridge
 	CLI       *cliagent.Target // closed-box CLI coding agent (nil = pi harness + simulated tools)
 	CLIVars   cliagent.Vars
+	fork      *forkRun // set only while Fork runs
 	// OnTrace, if set, receives every finished trace (attack or benign) before the caller saves it.
 	// The CLI uses it to write each run into the trace graph as it happens.
 	OnTrace func(*trace.Trace)
@@ -101,6 +102,9 @@ func (r *Runner) guardSpec() *harness.GuardSpec {
 }
 
 func (r *Runner) modelName() string {
+	if r.CLI != nil && r.CLI.Kind == "http" {
+		return "n/a (black-box HTTP agent)"
+	}
 	if r.Offline {
 		return "offline-simulated"
 	}
@@ -170,6 +174,31 @@ func (r *Runner) runEpisode(ctx context.Context, tr *trace.Trace, w *world.World
 		SystemPrompt: r.Scenario.SystemPrompt, Tools: r.Scenario.Tools, UserTurns: turns,
 		MaxTurns: r.MaxTurns, Guard: r.guardSpec(),
 	}
+	if f := r.fork; f != nil { // live revive: start from the recorded conversation and put the world back in its state
+		for _, s := range f.plan.Kept {
+			data := map[string]any{"replayed": true}
+			for k, v := range s.Data {
+				data[k] = v
+			}
+			if _, err := tr.Append(s.Type, s.TS, data); err != nil {
+				return err
+			}
+			if s.Type == trace.StepToolCall {
+				name, _ := s.Data["name"].(string)
+				callID, _ := s.Data["id"].(string)
+				args, _ := s.Data["args"].(map[string]any)
+				if args == nil {
+					args = map[string]any{}
+				}
+				w.Call(name, callID, args)
+			}
+		}
+		spec.History = toHarnessSteps(f.plan.Kept)
+		spec.AllUserTurns = f.turn
+		if f.plan.UserTurns <= len(turns) {
+			spec.UserTurns = turns[f.plan.UserTurns:]
+		}
+	}
 	res, err := r.Harness.RunEpisode(ctx, spec, nil)
 	if err != nil {
 		return err
@@ -201,7 +230,7 @@ func orOff(s string) string {
 // RunAttack plants the seed's payload on a surface and runs the scenario's user task.
 func (r *Runner) RunAttack(ctx context.Context, seed Seed, surfaceID string) (*trace.Trace, error) {
 	payload := seed.Render(r.Vars())
-	return r.RunPayload(ctx, trace.Attack{SeedID: seed.ID, Technique: seed.Technique, Surface: surfaceID, Encoding: seed.Encoding, Payload: payload})
+	return r.RunPayload(ctx, trace.Attack{SeedID: seed.ID, Technique: seed.Technique, Surface: surfaceID, Encoding: seed.Encoding, Payload: payload, IntelRef: seed.Ref})
 }
 
 // RunPayload plants an arbitrary payload on a surface and runs the scenario's user task.

@@ -135,13 +135,15 @@ func (s *Store) IngestTrace(ctx context.Context, tr *trace.Trace, sc *scenario.S
 		ON CREATE SET e.kind=$kind, e.scenario=$scenario, e.model=$model, e.target=$agent_name, e.guard_mode=$guard,
 		              e.start_ms=$start, e.end_ms=$end, e.valid_from=$start, e.valid_to=$end, e.rec_from=$now,
 		              e.trace_head=$head, e.steps=$nsteps, e.final_text=$final, e.error=$err, e.policy=$policy,
-		              e.success_at_ingest=$success, e.progress_at_ingest=$progress, e.simulated=$simulated, e.signed_by=$signed_by
+		              e.success_at_ingest=$success, e.progress_at_ingest=$progress, e.simulated=$simulated, e.signed_by=$signed_by,
+		              e.fork_of=$fork_of, e.fork_at=$fork_at, e.isolation=$isolation, e.observability=$observability
 		MERGE (e)-[:TARGETS]->(ag)`,
 		map[string]any{"agent_id": agentID, "agent_name": orStr(tr.Target, "unknown-target"), "ep": tr.TraceID, "kind": tr.Kind,
 			"scenario": scName, "model": tr.Model, "guard": tr.GuardMode, "start": startMs, "end": endMs, "now": now,
 			"head": head, "nsteps": len(tr.Steps), "final": red(clip(tr.FinalText, 2000)), "err": clip(tr.Error, 500),
 			"policy": tr.PolicyHash, "success": tr.Success, "progress": tr.Progress,
-			"simulated": tr.Model == "offline-simulated", "signed_by": signerOf(tr)}})
+			"simulated": tr.Model == "offline-simulated", "signed_by": signerOf(tr),
+			"fork_of": nullable(tr.ForkOf), "fork_at": tr.ForkAt, "isolation": tr.Isolation, "observability": tr.Observability}})
 
 	// ---- steps ----
 	byLabel := map[string][]any{}
@@ -273,6 +275,12 @@ func (s *Store) IngestTrace(ctx context.Context, tr *trace.Trace, sc *scenario.S
 			MERGE (e)-[:PLANTED]->(p)`,
 			map[string]any{"ep": tr.TraceID, "pid": pid, "text": ptxt, "seed": a.SeedID, "op": a.Encoding, "now": now,
 				"tech": a.Technique, "res": scName + "/" + baseName(a.Surface), "surface": a.Surface, "sc": scName}})
+		if a.IntelRef != "" {
+			stmts = append(stmts, stmt{`
+				MATCH (e:Episode {id:$ep})
+				MERGE (i:Intel {id:$ref}) ON CREATE SET i.rec_from=$now, i.stub=true
+				MERGE (e)-[:INSPIRED_BY]->(i)`, map[string]any{"ep": tr.TraceID, "ref": a.IntelRef, "now": now}})
+		}
 		texts = append(texts, vecItem{id: "payload:" + pid, text: ptxt, payload: map[string]any{"kind": "payload", "ep": tr.TraceID, "technique": a.Technique, "seed": a.SeedID, "operator": a.Encoding, "payload_id": pid}})
 	}
 
@@ -399,4 +407,12 @@ func (ix *Index) upsert(ctx context.Context, tr *trace.Trace, items []vecItem, s
 		pts[i] = vec.Point{ID: it.id, Vector: vs[i], Payload: p}
 	}
 	return len(pts), ix.Q.Upsert(ctx, ix.Collection, pts)
+}
+
+// nullable stores an empty string as no property at all, so "has a fork_of" is a meaningful test in Cypher.
+func nullable(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

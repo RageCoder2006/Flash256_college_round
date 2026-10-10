@@ -31,6 +31,8 @@ type Options struct {
 	Signer         *sign.Signer
 	Title          string
 	Classification string // shown on the cover; default CONFIDENTIAL
+	IntelDir       string // threat-intel cache (default deploy/stack/intel); missing or empty means no intel sections
+	NoIntel        bool
 }
 
 func isErrored(t *trace.Trace) bool { return t.Error != "" && !t.Success }
@@ -218,6 +220,7 @@ func Build(o Options) (*Report, error) {
 		sort.Strings(asi)
 		f.ASI = asi
 		f.Title = fmt.Sprintf("%s via %s leaks data (%s)", strings.ReplaceAll(f.Technique, "_", " "), f.Surface, strings.ReplaceAll(f.Objective, "_", " "))
+		f.IntelSeed = rep.Attack.IntelRef
 		f.Payload, _ = redact.Text(rep.Attack.Payload, known)
 		f.HiddenChars = countHidden(rep.Attack.Payload)
 		// guarded replays of the same attack
@@ -305,6 +308,17 @@ func Build(o Options) (*Report, error) {
 			r.HasAdvisories = true
 		}
 	}
+	for _, t := range all {
+		if t.Observability == "blackbox" && t.ScenarioID == sc {
+			r.BlackBox = true
+		}
+		if t.Isolation != "" && t.ScenarioID == sc {
+			r.Isolation = t.Isolation
+		}
+	}
+	if !o.NoIntel {
+		attachIntel(r, o.IntelDir)
+	}
 	r.RiskRating, r.RiskBasis = riskRating(r)
 	r.Headline = headline(r, len(benign))
 	r.Limitations = limitations(r, scen)
@@ -381,8 +395,17 @@ func limitations(r *Report, sc *scenario.Scenario) []string {
 	if r.ControlRuns == 0 {
 		l = append(l, "No no-attack control was run, so a behaviour the agent shows on its own (for example reading a credentials file unprompted) cannot be separated from an attack effect.")
 	}
-	if sc != nil && sc.Sandbox {
+	switch {
+	case r.Isolation == "gvisor":
+		l = append(l, "The agent ran in a gVisor container with no network; the only ports it could reach were tunnelled by the platform (the guard proxy and the canary server). gVisor reimplements the Linux kernel in user space, which narrows the host kernel attack surface a hostile agent can touch, but it is not a hardware virtual machine.")
+	case sc != nil && sc.Sandbox:
 		l = append(l, "Shell commands ran in a Landlock/seccomp sandbox that shares the host kernel; it is not a virtual machine.")
+	}
+	if sc != nil && sc.Generated {
+		l = append(l, "The scenario was generated automatically from the agent's tool list (avhsol scengen). Its planted data, documents and benign tasks are generic, so results show how the agent handles those, not its real business data.")
+	}
+	if r.BlackBox {
+		l = append(l, "Black-box target: the agent was reached only over HTTP, so its tool calls and model traffic were not observed and no guard could be placed in its path. Findings rest on its effects on the outside world (canary sink hits, documents it fetched) and on its replies.")
 	}
 	if r.Simulated {
 		l = append(l, "Some runs used the simulated model. They validate the tooling, not any real agent.")

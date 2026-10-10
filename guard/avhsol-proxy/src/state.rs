@@ -77,6 +77,8 @@ pub struct Shared {
     seen_results: Mutex<HashSet<String>>,
     next_ex: AtomicU64,
     c: Mutex<Counters>,
+    /// Recorded model answers served first, in order, before the live model is called (live revive of a closed-box agent).
+    cassette: Mutex<VecDeque<Value>>,
 }
 
 const MAX_EVENTS: usize = 5000;
@@ -108,6 +110,7 @@ impl Shared {
             seen_results: Mutex::new(HashSet::new()),
             next_ex: AtomicU64::new(1),
             c: Mutex::new(Counters::default()),
+            cassette: Mutex::new(VecDeque::new()),
         }
     }
     pub fn mode(&self) -> Mode {
@@ -193,7 +196,32 @@ impl Shared {
         self.exchanges.lock().unwrap().iter().filter(|e| e.id > since).cloned().collect()
     }
 
+    pub fn set_cassette(&self, items: Vec<Value>) {
+        // The tool results for replayed calls will come back in later requests; they must be recorded again for this run
+        // even though an earlier run (the one being forked) used the same call ids.
+        {
+            let mut seen = self.seen_results.lock().unwrap();
+            for it in &items {
+                for c in it.get("tool_calls").and_then(Value::as_array).cloned().unwrap_or_default() {
+                    if let Some(id) = c.get("id").and_then(Value::as_str) {
+                        seen.remove(id);
+                    }
+                }
+            }
+        }
+        *self.cassette.lock().unwrap() = items.into();
+    }
+
+    pub fn pop_cassette(&self) -> Option<Value> {
+        self.cassette.lock().unwrap().pop_front()
+    }
+
+    pub fn cassette_len(&self) -> usize {
+        self.cassette.lock().unwrap().len()
+    }
+
     pub fn reset_metrics(&self) {
+        self.cassette.lock().unwrap().clear();
         self.exchanges.lock().unwrap().clear();
         self.seen_results.lock().unwrap().clear();
         *self.c.lock().unwrap() = Counters::default();

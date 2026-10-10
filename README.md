@@ -83,6 +83,9 @@ real model, and the graph keeps them out of statistics unless you ask.
 | `report` | model-written analyst advisories for confirmed exploits |
 | `export` | the **security report**: `html`, `pdf`, `md`, `json` or `sarif`, laid out by a JSON skeleton (see [docs/REPORTS.md](docs/REPORTS.md)) |
 | `graph` | `init ingest stats episodes why beliefs history techniques similar ask reset` |
+| `intel` | threat intel: `sync status list show seeds graph export-bundle import-bundle` (GHSA, NVD, OSV, KEV, EPSS, ATLAS/OWASP, research feeds; [docs/INTEL.md](docs/INTEL.md)) |
+| `scengen` | generate a test scenario from an agent's tool list or a live MCP server ([docs/SCENARIOS.md](docs/SCENARIOS.md)) |
+| `fork` | live revive: re-walk a recorded run and let the model take over at a step ([docs/REVIVE.md](docs/REVIVE.md)) |
 | `serve` | the API behind the dashboard |
 | `keygen`, `verify` | trace signing |
 | `auditlog` | verify or tail the API's tamper-evident audit log |
@@ -98,6 +101,8 @@ example. Also available from the dashboard and the API. Samples from real runs: 
 claims what was measured (no rating for simulated runs; reliability only with repeats; errored runs excluded).
 
 ## Targets
+
+Three kinds, each judged by the same oracles (see [docs/CONNECTORS.md](docs/CONNECTORS.md)): `cli` (any command-line agent; OpenAI **or Anthropic** wire through the guard proxy), `mcp` (adds a poisoned MCP server), `http` (a remote chat endpoint, black box).
 
 * **Simulated-tool agents** (`scenarios/hr-records.yaml`, `scenarios/devops-coder.yaml`): a pi agent with fake tools
   over synthetic data, so an attack can never touch anything real.
@@ -145,10 +150,9 @@ Caveats: one model, small samples (exfiltration vs control p≈0.11), and the co
 
 ## Not built yet
 
-Bring-your-own-agent connectors beyond OpenAI-compatible CLI agents (Anthropic wire format, MCP, plain HTTP agents);
-automatic scenario generation for arbitrary tool lists; live fork-from-a-step ("revive" by re-running the model;
-the policy time-machine already works); reading TRIVEKTRA's eBPF findings back
-into traces (spans are emitted); TLS on the stack's database ports.
+A micro-VM sandbox tier (gVisor is available, see [docs/SANDBOX.md](docs/SANDBOX.md)); verification of the Claude Code and MCP target examples against the
+real agents; threat-intel scheduling, more feeds and a dependency-aware match; reading TRIVEKTRA's eBPF findings into traces (spans are emitted); TLS on the
+stack's database ports. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Credits
 

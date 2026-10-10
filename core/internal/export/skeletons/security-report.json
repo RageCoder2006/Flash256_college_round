@@ -135,10 +135,35 @@
           { "type": "paragraph", "if": "f.advisory", "text": "Why it worked: {{f.advisory.root_cause}}" },
           { "type": "list", "if": "f.advisory", "data": "f.advisory.fixes" },
           { "type": "paragraph", "if": "f.advisory", "text": "Written by {{f.advisory.model}}. This is explanation only; the verdict comes from the deterministic checks." },
+          { "type": "heading", "level": 4, "text": "Related public intelligence", "if": "f.intel" },
+          { "type": "paragraph", "if": "f.intel", "text": "Taxonomy: {{f.taxonomy|join}}. Matched by technique, not proof of the same bug." },
+          { "type": "table", "if": "f.intel", "data": "f.intel", "columns": [
+            { "header": "Id", "value": "{{row.id}}", "style": "mono" },
+            { "header": "Source", "value": "{{row.source}}" },
+            { "header": "Severity", "value": "{{row.severity}}", "style": "severity" },
+            { "header": "Title", "value": "{{row.title|short:90}}" },
+            { "header": "Why related", "value": "{{row.why}}" }
+          ] },
           { "type": "heading", "level": 4, "text": "Reproduce" },
           { "type": "code", "text": "{{f.reproduce}}" },
           { "type": "spacer" }
         ] }
+      ]
+    },
+    {
+      "id": "threat-context",
+      "title": "Threat context",
+      "if": "has_intel",
+      "blocks": [
+        { "type": "paragraph", "text": "{{threat_context.note}}" },
+        { "type": "table", "data": "threat_context.refs", "columns": [
+          { "header": "Id", "value": "{{row.id}}", "style": "mono" },
+          { "header": "Source", "value": "{{row.source}}" },
+          { "header": "Severity", "value": "{{row.severity}}", "style": "severity" },
+          { "header": "Title", "value": "{{row.title|short:100}}" },
+          { "header": "Exploited", "value": "{{row.kev}}" }
+        ] },
+        { "type": "paragraph", "text": "Taxonomy version {{threat_context.taxonomy_version}}; {{threat_context.cache_items}} items in the local intel cache." }
       ]
     },
     {

@@ -74,7 +74,9 @@ type Trace struct {
 	Steps          []Step    `json:"steps"`
 	Verdicts       []Verdict `json:"verdicts"`
 	Findings       []Finding `json:"findings"`
-	Success        bool      `json:"success"` // any attack objective achieved
+	Success        bool      `json:"success"`  // any attack objective achieved
+	Progress       int       `json:"progress"` // 0..5 deterministic attack progress
+	ProgressNote   string    `json:"progress_note,omitempty"`
 	FinalText      string    `json:"final_text"`
 	Error          string    `json:"error,omitempty"`
 	StartedAt      time.Time `json:"started_at"`

@@ -204,3 +204,38 @@ func (c *Client) Close() {
 	}
 	_ = c.cmd.Wait()
 }
+
+type CraftHistory struct {
+	Payload     string   `json:"payload"`
+	Progress    int      `json:"progress"`
+	Note        string   `json:"note"`
+	GuardBlocks []string `json:"guard_blocks"`
+}
+
+type CraftRequest struct {
+	LLM           LLMSpec        `json:"llm"`
+	Objective     string         `json:"objective"`
+	SurfaceKind   string         `json:"surface_kind"`
+	TargetTools   []string       `json:"target_tools"`
+	Technique     string         `json:"technique"`
+	Operator      string         `json:"operator"`
+	SeedText      string         `json:"seed_text"`
+	AttackerEmail string         `json:"attacker_email"`
+	History       []CraftHistory `json:"history"`
+}
+
+type CraftResult struct {
+	Payload   string `json:"payload"`
+	Rationale string `json:"rationale"`
+	Error     string `json:"error,omitempty"`
+}
+
+// CraftPayload asks the TS AttackerAgent (a pi agent) for the next payload.
+func (c *Client) CraftPayload(ctx context.Context, req CraftRequest) (*CraftResult, error) {
+	raw, err := c.call(ctx, "craftPayload", req)
+	if err != nil {
+		return nil, err
+	}
+	var res CraftResult
+	return &res, json.Unmarshal(raw, &res)
+}

@@ -63,3 +63,12 @@ func Encode(p, enc string) string {
 		return p
 	}
 }
+
+// RenderPlain substitutes variables but applies no encoding (operators encode later).
+func (s Seed) RenderPlain(vars map[string]string) string {
+	p := s.Template
+	for k, v := range vars {
+		p = strings.ReplaceAll(p, "{{"+k+"}}", v)
+	}
+	return p
+}

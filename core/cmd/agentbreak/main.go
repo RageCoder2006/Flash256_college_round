@@ -12,6 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"net/http"
+
+	"github.com/41vi4p/agentbreak/core/internal/api"
+	"github.com/41vi4p/agentbreak/core/internal/attacker"
 	"github.com/41vi4p/agentbreak/core/internal/audit"
 	"github.com/41vi4p/agentbreak/core/internal/campaign"
 	"github.com/41vi4p/agentbreak/core/internal/guard"
@@ -27,6 +31,8 @@ func usage() {
 commands:
   audit      static permission audit of a scenario
   campaign   run seed attacks (and optionally the benign regression suite)
+  serve      dashboard API (traces, reports, guard control, launch runs)
+  hunt       autonomous adaptive attack search (bandit + LLM payload crafting + minimisation)
   validate   baseline attacks -> replay under the Rust guard -> benign regression -> ablation
   verify     verify the hash chain of a saved trace
 
@@ -44,6 +50,10 @@ func main() {
 		err = cmdAudit(os.Args[2:])
 	case "campaign":
 		err = cmdCampaign(os.Args[2:])
+	case "serve":
+		err = cmdServe(os.Args[2:])
+	case "hunt":
+		err = cmdHunt(os.Args[2:])
 	case "validate":
 		err = cmdValidate(os.Args[2:])
 	case "verify":
@@ -273,4 +283,117 @@ func cmdValidate(args []string) error {
 		fmt.Printf("guard decision latency:        p50 %dµs  p99 %dµs (n=%d)\n", v.Guard.Latency.P50, v.Guard.Latency.P99, v.Guard.Latency.N)
 	}
 	return writeReport(c.outDir, "validation.json", v)
+}
+
+func cmdHunt(args []string) error {
+	fs := flag.NewFlagSet("hunt", flag.ExitOnError)
+	c := addCommon(fs)
+	budget := fs.Int("budget", 40, "bandit pulls (payload executions, excluding confirm/minimise re-runs)")
+	reliab := fs.Int("reliability-runs", 3, "runs used to estimate a discovery's reliability")
+	minRuns := fs.Int("minimize-runs", 12, "max extra runs to shrink a winning payload")
+	stopAfter := fs.Int("stop-after", 0, "stop after N discoveries (0 = spend the whole budget)")
+	llmRewrite := fs.Bool("llm-rewrite", true, "let the pi AttackerAgent write payloads (needs a real LLM)")
+	vsDefense := fs.Bool("vs-defense", false, "after the unguarded hunt, hunt again against the enforcing guard")
+	rngSeed := fs.Int64("rng-seed", 1, "search RNG seed (reproducible exploration order)")
+	_ = fs.Parse(args)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	e, err := c.setup(ctx, *vsDefense)
+	if err != nil {
+		return err
+	}
+	defer e.cleanup()
+
+	ops := append([]string{}, attacker.DeterministicOps...)
+	useLLM := *llmRewrite && !c.offline
+	if useLLM {
+		ops = append(ops, attacker.OpLLMRewrite)
+	}
+	var surfaces []string
+	for _, sf := range e.sc.Surfaces {
+		surfaces = append(surfaces, sf.ID)
+	}
+	arms := attacker.BuildArms(e.seeds, surfaces, ops)
+	var obj string
+	for _, o := range e.sc.Objectives {
+		obj += o.Description + "; "
+	}
+	var crafter attacker.Crafter
+	if useLLM {
+		crafter = &attacker.HarnessCrafter{R: e.r, Objective: obj, SurfaceKind: func(id string) string {
+			if sf := e.sc.Surface(id); sf != nil {
+				return sf.Kind
+			}
+			return "document"
+		}}
+	}
+	cfg := attacker.Config{
+		Budget: *budget, Reliab: *reliab, MinimizeMax: *minRuns, StopAfter: *stopAfter, Seed: *rngSeed,
+		Vars: map[string]string{"attacker_email": campaign.AttackerEmail}, Log: os.Stdout,
+	}
+	hunt := func(label string) (*attacker.Result, error) {
+		fmt.Printf("== hunt (%s): %d arms, budget %d, llm_rewrite=%v\n", label, len(arms), *budget, useLLM)
+		ex := &attacker.RunnerExecutor{R: e.r, OutDir: e.traceDir}
+		return attacker.Hunt(ctx, ex, crafter, arms, cfg)
+	}
+	out := map[string]any{}
+	var g *guard.Client
+	if *vsDefense {
+		g = guard.New(c.guardURL)
+		if err := g.Health(ctx); err != nil {
+			return fmt.Errorf("guard not reachable at %s: %w", c.guardURL, err)
+		}
+		if err := g.PushPolicy(ctx, guard.PolicyFromScenario(e.sc, guard.AllDefenses)); err != nil {
+			return err
+		}
+		_ = g.SetMode(ctx, "off")
+	}
+	open, err := hunt("guard off")
+	if err != nil {
+		return err
+	}
+	printHunt(open)
+	out["guard_off"] = open
+	if *vsDefense {
+		e.r.GuardMode = "enforce"
+		if err := g.SetMode(ctx, "enforce"); err != nil {
+			return err
+		}
+		def, err := hunt("guard enforce")
+		if err != nil {
+			return err
+		}
+		printHunt(def)
+		out["guard_enforce"] = def
+		fmt.Printf("\nadaptive attacker vs defense: %d discoveries unguarded -> %d against the guard (%d/%d attempts)\n",
+			len(open.Discoveries), len(def.Discoveries), len(def.Discoveries), def.Attempts)
+	}
+	return writeReport(c.outDir, "hunt.json", out)
+}
+
+func printHunt(r *attacker.Result) {
+	fmt.Printf("\n%d attempts, %d total executions, %d discoveries\n", r.Attempts, r.Executions, len(r.Discoveries))
+	for _, d := range r.Discoveries {
+		fmt.Printf("  * %s  reliability %.0f%% (%d runs)  found at attempt %d  trace %s\n    minimized payload: %q\n",
+			d.Arm, d.Reliability*100, d.Runs, d.Attempt, d.TraceID, d.MinimizedPayload)
+	}
+	fmt.Println()
+}
+
+func cmdServe(args []string) error {
+	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	addr := fs.String("addr", "127.0.0.1:8080", "listen address (keep it on loopback)")
+	outDir := fs.String("out", "out", "directory holding traces/ and report JSON")
+	scPath := fs.String("scenario", "scenarios/hr-records.yaml", "scenario file")
+	guardURL := fs.String("guard-url", os.Getenv("AGENTBREAK_GUARD_URL"), "abguard-proxy base URL")
+	offline := fs.Bool("offline", false, "launch runs with the simulated model by default")
+	_ = fs.Parse(args)
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	srv := api.New(api.Config{OutDir: *outDir, ScenarioPath: *scPath, GuardURL: *guardURL, Exe: exe, Offline: *offline})
+	fmt.Printf("agentbreak API on http://%s (out=%s)\n", *addr, *outDir)
+	return http.ListenAndServe(*addr, srv.Handler())
 }

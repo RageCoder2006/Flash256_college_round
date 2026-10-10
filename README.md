@@ -10,7 +10,7 @@ measures whether a toggleable guard stops the same attacks without breaking beni
 | Control plane: campaigns, oracles, auditor, traces | Go | `core/` |
 | Agent harness (target + attacker agents) | TypeScript, forked from [pi](https://github.com/earendil-works/pi) | `pi/packages/agentbreak` |
 | Guard proxy + sandbox | Rust | `guard/` (M1+) |
-| Dashboard | Next.js | `dashboard/` (M4) |
+| Dashboard | Next.js | `dashboard/` |
 
 `pi/` is a vendored fork (upstream commit in `pi/UPSTREAM_COMMIT`); AgentBreak's changes live in
 `pi/packages/agentbreak` and are kept out of pi's own packages where possible.
@@ -27,6 +27,17 @@ export AGENTBREAK_LLM_BASE_URL=http://127.0.0.1:8888/v1 AGENTBREAK_LLM_MODEL=<mo
 ```
 `-offline` results are **not** a measurement of any real model.
 
+## Dashboard
+`make demo` starts the Rust guard (:7077), the Go API (:8787) and the dashboard (:3000). Open
+http://localhost:3000, go to **Run**, start a validation, then read the **Verdict** page: each
+exploit is drawn as a breach line (red end to end with the guard off; cut at the blocked call,
+with the rule id, with the guard on).
+
+## Commands
+`agentbreak audit | campaign | validate | hunt | serve | verify`. `hunt` is the autonomous attacker
+(UCB1 bandit over technique × surface × operator, LLM-written payloads via the pi AttackerAgent,
+reliability re-runs, payload minimisation, optional `-vs-defense`).
+
 ## Status
-M0 done: Go↔pi stdio harness, per-episode simulated world, deterministic oracle, permission/
-confused-deputy auditor, hash-chained traces (`agentbreak verify`), seed campaign + benign regression.
+Done: M0 harness/world/oracle/auditor/traces, M1 Rust guard + validation + ablation, M2 adaptive
+attacker, M4 API + dashboard. Open: M3 Rust sandbox + coding-agent scenario, M5 TRIVEKTRA eBPF bridge.

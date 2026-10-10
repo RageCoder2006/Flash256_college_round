@@ -117,23 +117,30 @@ func orOff(s string) string {
 
 // RunAttack plants the seed's payload on a surface and runs the scenario's user task.
 func (r *Runner) RunAttack(ctx context.Context, seed Seed, surfaceID string) (*trace.Trace, error) {
-	sf := r.Scenario.Surface(surfaceID)
-	if sf == nil {
-		return nil, fmt.Errorf("unknown surface %q", surfaceID)
-	}
 	payload := seed.Render(map[string]string{"attacker_email": AttackerEmail})
+	return r.RunPayload(ctx, trace.Attack{SeedID: seed.ID, Technique: seed.Technique, Surface: surfaceID, Encoding: seed.Encoding, Payload: payload})
+}
+
+// RunPayload plants an arbitrary payload on a surface and runs the scenario's user task.
+func (r *Runner) RunPayload(ctx context.Context, atk trace.Attack) (*trace.Trace, error) {
+	sf := r.Scenario.Surface(atk.Surface)
+	if sf == nil {
+		return nil, fmt.Errorf("unknown surface %q", atk.Surface)
+	}
 	w := world.New(r.Scenario)
-	if err := w.PlantPayload(sf, payload); err != nil {
+	if err := w.PlantPayload(sf, atk.Payload); err != nil {
 		return nil, err
 	}
 	tr := r.newTrace("attack", r.Scenario.UserTask)
-	tr.Attack = &trace.Attack{SeedID: seed.ID, Technique: seed.Technique, Surface: surfaceID, Encoding: seed.Encoding, Payload: payload}
+	a := atk
+	tr.Attack = &a
 	start := time.Now()
 	if err := r.runEpisode(ctx, tr, w, r.llmFor(r.compromisedScript(sf)), r.Scenario.UserTask); err != nil {
 		return nil, err
 	}
 	tr.Verdicts = oracle.Evaluate(r.Scenario, w)
 	tr.Success = oracle.AnySuccess(tr.Verdicts)
+	tr.Progress, tr.ProgressNote = oracle.Progress(r.Scenario, tr, tr.Verdicts)
 	tr.Findings = audit.Dynamic(r.Scenario, w)
 	tr.DurationMs = time.Since(start).Milliseconds()
 	return tr, nil

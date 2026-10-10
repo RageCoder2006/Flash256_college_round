@@ -30,6 +30,8 @@ type LLMSpec struct {
 	Model    string         `json:"model,omitempty"`
 	APIKey   string         `json:"api_key,omitempty"`
 	Scripted []ScriptedTurn `json:"scripted,omitempty"`
+	Thinking string         `json:"thinking,omitempty"` // "off" disables chain-of-thought on reasoning models
+	MaxTok   int            `json:"max_tokens,omitempty"`
 }
 
 type GuardSpec struct {

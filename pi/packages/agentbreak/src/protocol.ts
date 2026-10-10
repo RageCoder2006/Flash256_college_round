@@ -20,6 +20,9 @@ export interface LlmSpec {
 	model?: string;
 	api_key?: string;
 	scripted?: ScriptedTurn[];
+	/** "off" disables the model's chain-of-thought via chat_template_kwargs (reasoning models can otherwise burn the whole token budget). */
+	thinking?: "default" | "off";
+	max_tokens?: number;
 }
 
 export interface GuardSpec {

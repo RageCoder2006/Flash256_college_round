@@ -14,6 +14,8 @@ import type { LlmSpec } from "./protocol.ts";
 export interface BuiltLlm {
 	models: Models;
 	model: Model<string>;
+	/** Payload hook for pi's Agent: injects provider-specific request fields. */
+	onPayload?: (payload: unknown) => unknown;
 }
 
 /**
@@ -57,7 +59,7 @@ export function buildLlm(spec: LlmSpec): BuiltLlm {
 		input: ["text"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: 32768,
-		maxTokens: 4096,
+		maxTokens: spec.max_tokens ?? 4096,
 	};
 	const provider = createProvider({
 		id: providerId,
@@ -68,5 +70,9 @@ export function buildLlm(spec: LlmSpec): BuiltLlm {
 		api: openAICompletionsApi(),
 	});
 	models.setProvider(provider);
-	return { models, model };
+	const onPayload =
+		spec.thinking === "off"
+			? (payload: unknown) => ({ ...(payload as Record<string, unknown>), chat_template_kwargs: { enable_thinking: false } })
+			: undefined;
+	return { models, model, onPayload };
 }

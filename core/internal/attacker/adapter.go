@@ -54,6 +54,7 @@ func (c *HarnessCrafter) Craft(ctx context.Context, req CraftRequest) (string, e
 	}
 	llm := c.R.LLM
 	llm.Kind = "openai"
+	llm.Thinking, llm.MaxTok = "off", 1500 // the crafter must reach its tool call; reasoning can eat the budget
 	res, err := c.R.Harness.CraftPayload(ctx, harness.CraftRequest{
 		LLM: llm, Objective: c.Objective, SurfaceKind: c.SurfaceKind(req.Arm.Surface), TargetTools: c.R.Scenario.Tools,
 		Technique: req.Arm.Seed.Technique, Operator: req.Arm.Operator, SeedText: req.Seed,

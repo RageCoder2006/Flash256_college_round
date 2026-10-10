@@ -116,7 +116,7 @@ func envOr(k, d string) string {
 
 type common struct {
 	scPath, seedPath, outDir, guardURL, harnessCmd, llmURL, llmModel, llmKey string
-	sandboxBin, kernelURL                                                    string
+	sandboxBin, kernelURL, thinking                                          string
 	repeats                                                                  int
 	offline                                                                  bool
 }
@@ -134,6 +134,7 @@ func addCommon(fs *flag.FlagSet) *common {
 	fs.StringVar(&c.llmModel, "llm-model", os.Getenv("AGENTBREAK_LLM_MODEL"), "model id")
 	fs.StringVar(&c.sandboxBin, "sandbox", envOr("AGENTBREAK_SANDBOX", "guard/target/release/absandbox"), "absandbox binary (used when the scenario has sandbox: true)")
 	fs.StringVar(&c.kernelURL, "kernel-otlp", os.Getenv("AGENTBREAK_KERNEL_OTLP"), "TRIVEKTRA OTLP receiver (e.g. http://127.0.0.1:4318): emit a span per sandboxed tool call")
+	fs.StringVar(&c.thinking, "target-thinking", "default", "target model chain-of-thought: default|off (off is faster; changes the target's behaviour)")
 	fs.StringVar(&c.llmKey, "llm-key", os.Getenv("AGENTBREAK_LLM_API_KEY"), "API key (if any)")
 	return c
 }
@@ -184,7 +185,7 @@ func (c *common) setup(ctx context.Context, needGuard bool) (*env, error) {
 	}
 	r := &campaign.Runner{
 		Scenario: sc, Harness: hc, Worlds: ws, WorldURL: worldURL,
-		LLM:     harness.LLMSpec{BaseURL: llmBase, Model: c.llmModel, APIKey: c.llmKey},
+		LLM:     harness.LLMSpec{BaseURL: llmBase, Model: c.llmModel, APIKey: c.llmKey, Thinking: c.thinking},
 		Offline: c.offline, GuardURL: c.guardURL, GuardMode: "off", MaxTurns: 12,
 	}
 	if sc.Sandbox {
@@ -263,7 +264,14 @@ func cmdCampaign(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("\nASR %.0f%% (%d/%d)\n", rep.ASR*100, rep.Successes, rep.Attempts)
+	fmt.Printf("\nASR %.0f%% (%d/%d valid runs)", rep.ASR*100, rep.Successes, rep.Valid)
+	if rep.Errors > 0 {
+		fmt.Printf("  [%d runs errored and are excluded]", rep.Errors)
+	}
+	fmt.Println()
+	for _, o := range rep.ByObjective {
+		fmt.Printf("  objective %-30s %-9s %d/%d  %.0f%%\n", o.Objective, o.Severity, o.Successes, o.Valid, o.Rate*100)
+	}
 	for _, t := range rep.ByTechnique {
 		fmt.Printf("  %-24s %d/%d  %.0f%%\n", t.Technique, t.Successes, t.Attempts, t.ASR*100)
 	}
@@ -285,6 +293,7 @@ func cmdValidate(args []string) error {
 	fs := flag.NewFlagSet("validate", flag.ExitOnError)
 	c := addCommon(fs)
 	ablate := fs.Bool("ablate", true, "knock out one defense at a time")
+	replayFrom := fs.String("replay-from", "", "reuse guard-off attack traces from this out dir instead of re-running the attack phase")
 	_ = fs.Parse(args)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -298,12 +307,32 @@ func cmdValidate(args []string) error {
 	if err := g.Health(ctx); err != nil {
 		return fmt.Errorf("guard not reachable at %s: %w", c.guardURL, err)
 	}
-	v, err := e.r.Validate(ctx, g, e.seeds, c.repeats, *ablate, e.traceDir, os.Stdout)
+	var prior []*trace.Trace
+	if *replayFrom != "" {
+		ms, _ := filepath.Glob(filepath.Join(*replayFrom, "traces", "*.json"))
+		for _, m := range ms {
+			if tr, err := trace.Load(m); err == nil && tr.Kind == "attack" && tr.Attack != nil && tr.GuardMode == "off" {
+				prior = append(prior, tr)
+			}
+		}
+		if len(prior) == 0 {
+			return fmt.Errorf("no guard-off attack traces in %s", *replayFrom)
+		}
+	}
+	v, err := e.r.Validate(ctx, g, e.seeds, c.repeats, *ablate, e.traceDir, os.Stdout, prior)
 	if err != nil {
 		return err
 	}
 	fmt.Println("\n================ DEFENSE VALIDATION ================")
-	fmt.Printf("exploits found (guard off):    %d/%d attempts  (ASR %.0f%%)\n", v.Baseline.Successes, v.Baseline.Attempts, v.Baseline.ASR*100)
+	den := v.Baseline.Valid
+	if den == 0 {
+		den = v.Baseline.Attempts
+	}
+	fmt.Printf("exploits found (guard off):    %d/%d valid runs  (ASR %.0f%%)", v.Baseline.Successes, den, v.Baseline.ASR*100)
+	if v.Baseline.Errors > 0 {
+		fmt.Printf("  [%d errored runs excluded]", v.Baseline.Errors)
+	}
+	fmt.Println()
 	fmt.Printf("replayed under guard:          %d  ->  blocked %d (%.0f%%), residual ASR %.0f%%\n", v.Replayed, v.Blocked, v.BlockedPct*100, v.Defended.ASR*100)
 	fmt.Printf("benign utility:                off %.0f%%  ->  on %.0f%%  (delta %+.0f pts)\n", v.RegressionOff.Utility*100, v.RegressionOn.Utility*100, v.UtilityDelta*100)
 	if len(v.RegressionOn.Failed) > 0 {
@@ -459,7 +488,7 @@ func cmdReport(args []string) error {
 	matches, _ := filepath.Glob(filepath.Join(*outDir, "traces", "*.json"))
 	var traces []*trace.Trace
 	for _, m := range matches {
-		if tr, err := trace.Load(m); err == nil && tr.Kind == "attack" && tr.Success && tr.Attack != nil {
+		if tr, err := trace.Load(m); err == nil && tr.Kind == "attack" && campaign.SeverityWinner(tr) && tr.Attack != nil && tr.GuardMode == "off" {
 			traces = append(traces, tr)
 		}
 	}
@@ -484,7 +513,7 @@ func cmdReport(args []string) error {
 		out = append(out, a)
 	}
 	if len(out) == 0 {
-		fmt.Println("no successful attack traces to explain")
+		fmt.Println("no critical-severity attack traces to explain")
 	}
 	return writeReport(*outDir, "advisories.json", out)
 }

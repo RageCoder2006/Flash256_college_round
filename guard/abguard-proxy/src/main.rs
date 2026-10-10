@@ -167,6 +167,7 @@ async fn chat(State(s): State<Arc<Shared>>, headers: HeaderMap, body: bytes::Byt
         Ok(r) => r,
         Err(e) => return (StatusCode::BAD_GATEWAY, format!("upstream: {e}")).into_response(),
     };
+    // time until the upstream model starts answering: dominated by model latency, NOT guard overhead
     s.record_proxy_overhead(t0.elapsed().as_micros() as u64);
     let status = StatusCode::from_u16(up.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
     let ct = up.headers().get(header::CONTENT_TYPE).cloned();

@@ -29,7 +29,8 @@ type Message struct {
 
 // Chat returns the assistant text. Temperature is low: advisories should be stable.
 func (c *Client) Chat(ctx context.Context, msgs []Message, maxTokens int) (string, error) {
-	body, _ := json.Marshal(map[string]any{"model": c.Model, "messages": msgs, "max_tokens": maxTokens, "temperature": 0.2, "stream": false})
+	body, _ := json.Marshal(map[string]any{"model": c.Model, "messages": msgs, "max_tokens": maxTokens, "temperature": 0.2, "stream": false,
+		"chat_template_kwargs": map[string]any{"enable_thinking": false}}) // reasoning models otherwise spend the budget before answering
 	req, err := http.NewRequestWithContext(ctx, "POST", c.BaseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return "", err

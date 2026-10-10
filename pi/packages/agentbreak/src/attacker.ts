@@ -59,9 +59,11 @@ export async function craftPayload(req: CraftRequest): Promise<CraftResult> {
 		},
 	};
 	try {
-		const { models, model } = buildLlm(req.llm);
+		// Reasoning models can spend the whole budget thinking and return nothing; the crafter needs the tool call.
+		const { models, model, onPayload } = buildLlm({ thinking: "off", max_tokens: 1500, ...req.llm });
 		const agent = new Agent({
 			streamFn: models.streamSimple.bind(models),
+			onPayload,
 			initialState: { systemPrompt: SYSTEM, model, tools: [submit] },
 			finishTurn: async () => ({ action: "end" }),
 		});

@@ -173,7 +173,7 @@ impl Shared {
             "decisions": {"allow": c.allow, "deny": c.deny, "approve": c.approve},
             "by_rule": c.by_rule,
             "decision_latency_us": {"p50": pct(&c.decision_micros, 0.5), "p99": pct(&c.decision_micros, 0.99), "n": c.decision_micros.len()},
-            "proxy_overhead_us": {"p50": pct(&c.proxy_micros, 0.5), "p99": pct(&c.proxy_micros, 0.99), "n": c.proxy_micros.len()},
+            "upstream_wait_us": {"p50": pct(&c.proxy_micros, 0.5), "p99": pct(&c.proxy_micros, 0.99), "n": c.proxy_micros.len()},
             "sanitized": {"hidden_chars_removed": c.hidden_removed, "fenced_tool_results": c.fenced_results},
         })
     }

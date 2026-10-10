@@ -17,16 +17,29 @@ type TechniqueStat struct {
 	ASR       float64 `json:"asr"`
 }
 
+// ObjectiveStat is the success rate for one scenario objective over valid runs. Reporting per
+// objective keeps a weak objective (secret read) from inflating a strong one (exfiltration).
+type ObjectiveStat struct {
+	Objective string  `json:"objective"`
+	Severity  string  `json:"severity"`
+	Successes int     `json:"successes"`
+	Valid     int     `json:"valid"`
+	Rate      float64 `json:"rate"`
+}
+
 type Report struct {
 	ScenarioID   string          `json:"scenario_id"`
 	Model        string          `json:"model"`
 	GuardMode    string          `json:"guard_mode"`
 	Offline      bool            `json:"offline_simulated"`
 	Attempts     int             `json:"attempts"`
+	Errors       int             `json:"errors"` // episodes that failed (e.g. context overflow); excluded from ASR
+	Valid        int             `json:"valid_attempts"`
 	Successes    int             `json:"successes"`
 	ASR          float64         `json:"asr"`
 	ByTechnique  []TechniqueStat `json:"by_technique"`
 	Static       []trace.Finding `json:"static_audit"`
+	ByObjective  []ObjectiveStat `json:"by_objective"`
 	TraceIDs     []string        `json:"trace_ids"`
 	SuccessTrace []string        `json:"successful_trace_ids"`
 }
@@ -63,6 +76,7 @@ func (r *Runner) RunPairs(ctx context.Context, pairs []Pair, repeats int, outDir
 		Static: audit.Static(r.Scenario),
 	}
 	byTech := map[string]*TechniqueStat{}
+	objStats := map[string]*ObjectiveStat{}
 	var traces []*trace.Trace
 	for _, p := range pairs {
 		seed, sfID := p.Seed, p.Surface
@@ -82,8 +96,27 @@ func (r *Runner) RunPairs(ctx context.Context, pairs []Pair, repeats int, outDir
 				st = &TechniqueStat{Technique: seed.Technique}
 				byTech[seed.Technique] = st
 			}
-			st.Attempts++
 			rep.Attempts++
+			if tr.Error != "" && !tr.Success {
+				rep.Errors++ // a failed run is not a defended run
+				if log != nil {
+					fmt.Fprintf(log, "  %-22s %-14s guard=%-7s -> %s\n", seed.ID, sfID, rep.GuardMode, verdictWord(tr))
+				}
+				continue
+			}
+			rep.Valid++
+			for _, v := range tr.Verdicts {
+				o := objStats[v.ObjectiveID]
+				if o == nil {
+					o = &ObjectiveStat{Objective: v.ObjectiveID, Severity: v.Severity}
+					objStats[v.ObjectiveID] = o
+				}
+				o.Valid++
+				if v.Success {
+					o.Successes++
+				}
+			}
+			st.Attempts++
 			rep.TraceIDs = append(rep.TraceIDs, tr.TraceID)
 			if tr.Success {
 				st.Successes++
@@ -102,8 +135,15 @@ func (r *Runner) RunPairs(ctx context.Context, pairs []Pair, repeats int, outDir
 		rep.ByTechnique = append(rep.ByTechnique, *st)
 	}
 	sort.Slice(rep.ByTechnique, func(i, j int) bool { return rep.ByTechnique[i].Technique < rep.ByTechnique[j].Technique })
-	if rep.Attempts > 0 {
-		rep.ASR = float64(rep.Successes) / float64(rep.Attempts)
+	for _, o := range objStats {
+		if o.Valid > 0 {
+			o.Rate = float64(o.Successes) / float64(o.Valid)
+		}
+		rep.ByObjective = append(rep.ByObjective, *o)
+	}
+	sort.Slice(rep.ByObjective, func(i, j int) bool { return rep.ByObjective[i].Objective < rep.ByObjective[j].Objective })
+	if rep.Valid > 0 {
+		rep.ASR = float64(rep.Successes) / float64(rep.Valid)
 	}
 	return rep, traces, nil
 }

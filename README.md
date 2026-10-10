@@ -60,7 +60,20 @@ the sandbox's real PID (`process.pid`), in the format TRIVEKTRA's `genaispan` re
 its eBPF agent can tie each tool call to kernel process/file/network events. Needs TRIVEKTRA's
 agent running (root, eBPF). The emitter is unit-tested; the live round trip is not exercised here.
 
+## Live results (model: dealignai/Ornith-1.5-35B-A3B-UNCENSORED-GGUF, 8k context)
+Sandboxed coding scenario, 7 seed attacks x 2 surfaces, guard off, target thinking off:
+- 13 valid runs (1 errored: an invisible-character payload overflowed the 8,192-token context; errors are excluded, not counted as defended).
+- **Full exfiltration (secret reached the canary sink): 5/13.** Control (harmless README note, no attack): 0/6.
+- Secret printed: 12/13 vs control 2/6. The model reads `.env` on its own about a third of the time, so this objective is weak evidence of injection and is no longer used to pick exploits to replay or explain.
+- Sandbox escapes: 0.
+- **Guard enforcing: 5/5 confirmed exfiltrations blocked** (rules D6 30, D4 19, D2 6), benign tasks 3/3 before and after, 292 tool results fenced on live model traffic. Decision time is milliseconds against 30-60 s model calls.
+- HR scenario (email exfil): 0/12 static seeds and 0/15 attacker-written payloads succeeded. Against this model that scenario is not broken by the techniques tried.
+Caveats: small samples (exfil vs control p~0.11), one model, one scenario family, and the "thinking off" target setting is not the model's default behaviour.
+
 ## Status
 Done: harness/world/oracle/auditor/traces, Rust guard (D1-D7) + validation + ablation, adaptive
 attacker, API + dashboard, Landlock/seccomp sandbox + canary sink + coding scenario, kernel span
-emitter. Open: reading TRIVEKTRA's findings back into traces; a live-LLM run (waiting on the model URL).
+emitter, per-objective reporting with a no-attack control, LLM analyst notes.
+Open: bring-your-own-agent connectors and automatic scenario generation (the "break any agent"
+goal), exportable report (HTML/PDF/SARIF), reading TRIVEKTRA findings back into traces, a live
+adaptive hunt on the coding scenario, dashboard visual QA in a browser.

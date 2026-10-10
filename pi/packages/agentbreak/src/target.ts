@@ -29,7 +29,7 @@ export async function runEpisode(spec: EpisodeSpec, onStep?: StepSink): Promise<
 
 	const world = new WorldClient(spec.world_url, spec.episode_id);
 	const guard = spec.guard && spec.guard.mode !== "off" ? new GuardClient(spec.guard) : undefined;
-	const { models, model } = buildLlm(spec.llm);
+	const { models, model, onPayload } = buildLlm(spec.llm);
 	const untrustedSources = new Set<string>();
 	let turns = 0;
 	let finalText = "";
@@ -37,6 +37,7 @@ export async function runEpisode(spec: EpisodeSpec, onStep?: StepSink): Promise<
 
 	const agent = new Agent({
 		streamFn: models.streamSimple.bind(models),
+		onPayload,
 		initialState: { systemPrompt: spec.system_prompt, model, tools: buildTools(spec.tools, world) },
 		beforeToolCall: async ({ toolCall, args }, signal) => {
 			push("tool_call", { id: toolCall.id, name: toolCall.name, args });

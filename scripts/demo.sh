@@ -9,7 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 make -s build
-(cd guard && cargo build --release -q)        # avhsol-proxy + avhsol-sandbox
+(cd guard && cargo build --release -p avhsol-proxy -q)
 [ -d dashboard/node_modules ] || (cd dashboard && npm install --silent)
 ./scripts/stack.sh up                          # Neo4j + Qdrant (generates credentials and API tokens on first run)
 [ -f deploy/stack/signing.key ] || ./core/bin/avhsol keygen

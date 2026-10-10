@@ -33,7 +33,7 @@ export default function TraceDetail({ params }: { params: Promise<{ id: string }
   return (
     <>
       <section className="verdict" style={{ paddingBottom: 12 }}>
-        <p style={{ margin: 0 }}><Link href="/traces">← All traces</Link></p>
+        <p style={{ margin: 0 }}><Link href="/console/traces">← All traces</Link></p>
         <h1 style={{ fontSize: "clamp(24px,3.4vw,34px)" }}>
           {t.kind === "attack"
             ? <>{t.attack?.technique.replaceAll("_", " ")} via {t.attack?.surface}: <b className={t.success ? "bad" : "good"}>{t.success ? "data leaked" : "contained"}</b></>

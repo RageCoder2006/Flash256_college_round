@@ -1,0 +1,59 @@
+.lp { background: var(--bg); color: var(--ink); font-family: var(--font-body); overflow-x: hidden; }
+.lp a { color: inherit; }
+.lp .wrap { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+.lp-nav { position: fixed; inset: 0 0 auto 0; z-index: 20; display: flex; justify-content: space-between; align-items: center; padding: 12px max(16px, calc((100% - 1120px) / 2)); backdrop-filter: blur(14px); background: rgba(5, 9, 18, 0.6); border-bottom: 1px solid var(--line); }
+.lp-nav .brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: 700; letter-spacing: 0.06em; text-decoration: none; }
+.lp-nav nav { display: flex; gap: 22px; font-size: 14px; color: var(--ink-2); }
+.lp-nav nav a { text-decoration: none; } .lp-nav nav a:hover { color: #fff; }
+@media (max-width: 760px) { .lp-nav nav { display: none; } }
+.lp-hero { position: relative; min-height: 100svh; display: grid; align-items: center; padding: 120px 0 80px; }
+.lp-hero canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.9; }
+.lp-hero::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 50%, rgba(5, 9, 18, 0.2), var(--bg) 85%); pointer-events: none; }
+.lp-hero .wrap { position: relative; z-index: 2; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--cyan); }
+.lp h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(2.4rem, 6.4vw, 5rem); line-height: 1.05; margin: 14px 0 20px; letter-spacing: -0.02em; }
+.lp h1 .grad { background: linear-gradient(90deg, var(--cyan), var(--violet) 55%, var(--breach)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lp .lede { font-size: clamp(1.05rem, 2vw, 1.3rem); color: var(--ink-2); max-width: 640px; line-height: 1.55; }
+.lp .cta { display: flex; gap: 12px; margin-top: 30px; flex-wrap: wrap; }
+.lp .by { margin-top: 28px; font-size: 13px; color: var(--ink-3); }
+.lp section.sec { padding: 96px 0; position: relative; }
+.lp h2 { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.6rem, 3.4vw, 2.4rem); margin: 8px 0 14px; letter-spacing: -0.01em; }
+.lp .sub { color: var(--ink-2); max-width: 700px; line-height: 1.6; }
+.lp .grid { display: grid; gap: 16px; margin-top: 36px; }
+.lp .grid.c3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.lp .grid.c2 { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+.lp .tile { padding: 22px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); transition: border-color 0.25s, transform 0.25s; }
+.lp .tile:hover { border-color: var(--line-strong); transform: translateY(-3px); }
+.lp .tile h3 { font-family: var(--font-display); font-size: 1rem; margin: 0 0 8px; }
+.lp .tile p { margin: 0; color: var(--ink-2); font-size: 14.5px; line-height: 1.55; }
+.lp .tile .ico { color: var(--cyan); margin-bottom: 12px; }
+.lp .steps-flow { counter-reset: s; display: grid; gap: 0; margin-top: 36px; border-left: 2px solid var(--line-strong); }
+.lp .steps-flow li { list-style: none; position: relative; padding: 0 0 26px 28px; }
+.lp .steps-flow li::before { counter-increment: s; content: counter(s); position: absolute; left: -15px; top: -2px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-mono); font-size: 12px; background: var(--bg-2); border: 1px solid var(--violet); color: var(--violet); }
+.lp .steps-flow b { display: block; margin-bottom: 4px; }
+.lp .steps-flow span { color: var(--ink-2); font-size: 14.5px; line-height: 1.55; }
+.arch { margin-top: 36px; display: grid; gap: 12px; }
+.arch .row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.arch .box { padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface); font-size: 13.5px; }
+.arch .box b { display: block; font-family: var(--font-mono); font-size: 12px; margin-bottom: 4px; }
+.arch .box.go b { color: var(--cyan); } .arch .box.rs b { color: var(--caution); } .arch .box.ts b { color: var(--violet); } .arch .box.db b { color: var(--held); } .arch .box.ui b { color: var(--breach); }
+.arch .box span { color: var(--ink-2); }
+.arch .rail { text-align: center; font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); }
+.lp table.res { width: 100%; border-collapse: collapse; margin-top: 28px; font-size: 14.5px; }
+.lp table.res th, .lp table.res td { text-align: left; padding: 12px 10px; border-bottom: 1px solid var(--line); }
+.lp table.res th { color: var(--ink-3); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; }
+.lp .num { font-family: var(--font-display); font-size: 1.3rem; }
+.lp .caveat { margin-top: 18px; padding: 14px 16px; border-radius: 12px; background: var(--caution-soft); border: 1px solid rgba(255, 180, 84, 0.35); color: #ffd9a3; font-size: 14px; line-height: 1.55; }
+.lp .status { display: grid; gap: 8px; margin-top: 28px; }
+.lp .status div { display: flex; gap: 10px; align-items: baseline; font-size: 14.5px; color: var(--ink-2); }
+.lp .tag { font-family: var(--font-mono); font-size: 11px; padding: 2px 8px; border-radius: 999px; flex: none; }
+.lp .tag.done { background: var(--held-soft); color: var(--held); } .lp .tag.todo { background: var(--violet-soft); color: var(--violet); }
+.lp footer { padding: 56px 0 72px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13.5px; }
+.lp footer .big { font-family: var(--font-display); font-size: clamp(1.4rem, 3vw, 2rem); color: var(--ink); margin-bottom: 8px; }
+.reveal { opacity: 0; transform: translateY(24px); }
+@media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; } }
+.arch-fig { margin: 36px 0 0; padding: 18px; border-radius: 18px; border: 1px solid var(--line); background: rgba(5, 9, 20, 0.7); overflow-x: auto; }
+.arch-fig svg { min-width: 760px; }
+.arch-flow { animation: arch-dash 1.6s linear infinite; }
+@keyframes arch-dash { to { stroke-dashoffset: -32; } }
+@media (prefers-reduced-motion: reduce) { .arch-flow { animation: none; } }

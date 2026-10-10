@@ -79,7 +79,7 @@ export default function Run() {
           {lines.length === 0 && <span className="dim">Output appears here.</span>}
           {lines.map((l, i) => <div key={i} className={cls(l)}>{l}</div>)}
         </div>
-        {status === "done" && <p>Finished. <Link href="/">See the verdict</Link> or <Link href="/traces">browse traces</Link>.</p>}
+        {status === "done" && <p>Finished. <Link href="/">See the verdict</Link> or <Link href="/console/traces">browse traces</Link>.</p>}
         {status === "failed" && <p className="err">The run failed. The last lines above say why.</p>}
       </div>
     </section>

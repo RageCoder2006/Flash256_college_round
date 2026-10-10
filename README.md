@@ -46,6 +46,8 @@ Made by **David Porathur** and **Rishit Baitule**. Built for BitNBuild.
 | Graph + vectors | Neo4j 5, Qdrant | `deploy/stack` |
 | Dashboard | Next.js | `dashboard/` |
 
+Docs for continuing the work: [docs/README.md](docs/README.md) (status, roadmap, architecture) and [CLAUDE.md](CLAUDE.md).
+
 ## Quick start
 
 ```bash

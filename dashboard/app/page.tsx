@@ -1,288 +1,182 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
-import { BreachLine } from "@/components/BreachLine";
-import { downloadReport, revealHidden, type Advisory, type AuditData, type Pair, type Summary, type Validation } from "@/lib/api";
-import { useFetch } from "@/lib/use";
+import { useEffect, useRef } from "react";
+import { animate, stagger } from "animejs";
+import { ArrowRight, Brain, Crosshair, Fingerprint, GitBranch, Lock, ScrollText, ShieldCheck, Waypoints } from "lucide-react";
+import { ArchDiagram } from "@/components/ArchDiagram";
+import { Logo } from "@/components/Logo";
+import "./landing.css";
 
-const DEFENSE_NAMES: Record<string, string> = {
-  D1: "Fence untrusted content",
-  D2: "Strip hidden text",
-  D3: "Capability limits",
-  D4: "Block egress after untrusted content",
-  D5: "Block secrets leaving",
-  D6: "Keep tainted contexts off protected files",
-  D7: "Approval for destructive tools",
-};
-
-function pct(n: number) {
-  return `${Math.round(n * 100)}%`;
+/** Drifting nodes and synapses behind the hero. Cheap 2D canvas; stops when off screen or for reduced motion. */
+function Lattice() {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const c = ref.current;
+    if (!c) return;
+    const g = c.getContext("2d")!;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    let w = 0, h = 0, raf = 0, on = true;
+    const pts = Array.from({ length: 70 }, (_, i) => ({ x: Math.random(), y: Math.random(), vx: (Math.random() - 0.5) * 0.00018, vy: (Math.random() - 0.5) * 0.00018, hot: i % 11 === 0 }));
+    const size = () => { w = c.clientWidth; h = c.clientHeight; c.width = w * dpr; c.height = h * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0); };
+    size();
+    window.addEventListener("resize", size);
+    const io = new IntersectionObserver(([e]) => { on = e.isIntersecting; });
+    io.observe(c);
+    let pulse = 0;
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      if (!on) return;
+      g.clearRect(0, 0, w, h);
+      pulse += 0.012;
+      for (const p of pts) { if (!reduced) { p.x += p.vx * 16; p.y += p.vy * 16; } if (p.x < 0 || p.x > 1) p.vx *= -1; if (p.y < 0 || p.y > 1) p.vy *= -1; }
+      for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+        const dx = (pts[i].x - pts[j].x) * w, dy = (pts[i].y - pts[j].y) * h, d = Math.hypot(dx, dy);
+        if (d < 150) { g.strokeStyle = `rgba(120,150,255,${(1 - d / 150) * 0.28})`; g.beginPath(); g.moveTo(pts[i].x * w, pts[i].y * h); g.lineTo(pts[j].x * w, pts[j].y * h); g.stroke(); }
+      }
+      pts.forEach((p, i) => {
+        const r = p.hot ? 3.4 + Math.sin(pulse + i) * 1.2 : 1.8;
+        g.fillStyle = p.hot ? "#ff5577" : i % 3 ? "#4dd8ff" : "#8f80ff";
+        g.shadowColor = g.fillStyle as string; g.shadowBlur = p.hot ? 16 : 6;
+        g.beginPath(); g.arc(p.x * w, p.y * h, r, 0, 7); g.fill();
+      });
+      g.shadowBlur = 0;
+    };
+    draw();
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", size); io.disconnect(); };
+  }, []);
+  return <canvas ref={ref} aria-hidden="true" />;
 }
 
-function Verdict({ v }: { v: Validation | null }) {
-  if (!v) {
-    return (
-      <section className="verdict">
-        <h1>No validation yet.</h1>
-        <p>Run a validation to find what breaks the agent, replay it with the guard enforcing, and check that normal work still goes through.</p>
-        <p><Link className="btn" href="/run">Start a validation</Link></p>
-      </section>
-    );
-  }
-  const stopped = v.blocked === v.replayed_exploits;
-  const intact = v.regression_guard_on.passed === v.regression_guard_on.tasks;
-  return (
-    <section className="verdict">
-      <h1>
-        With the guard enforcing, <b className={stopped ? "good" : "bad"}>{v.blocked} of {v.replayed_exploits}</b> working exploits are stopped
-        {" "}and <b className={intact ? "good" : "bad"}>{v.regression_guard_on.passed} of {v.regression_guard_on.tasks}</b> legitimate tasks still pass.
-      </h1>
-      <p>
-        Without the guard, {v.baseline.successes} of {v.baseline.attempts} attacks leaked data. The same exploits were replayed unchanged against the enforcing guard.
-      </p>
-      {v.baseline.offline_simulated && (
-        <p><span className="note">Simulated model: this run checks the pipeline and the guard, not how any real model resists attacks.</span></p>
-      )}
-    </section>
-  );
-}
+const FEATURES = [
+  { i: Crosshair, t: "It attacks like an adversary", d: "A pi agent driven by your own model hides instructions in the content your agent reads, then searches for the ones that work instead of replaying a fixed list." },
+  { i: ShieldCheck, t: "The oracle decides, not the model", d: "A planted canary secret reaching a canary server, a host file read from the sandbox, a forbidden tool call. Deterministic checks, never an opinion." },
+  { i: Fingerprint, t: "Signed, replayable evidence", d: "Every step is hash-chained and Ed25519-signed. Secrets are reduced to fingerprints before anything is stored." },
+  { i: Waypoints, t: "A causal graph of the run", d: "Which untrusted read tainted which call, what the guard decided, which secret was touched. Stored in Neo4j with vectors in Qdrant." },
+  { i: GitBranch, t: "A time machine for policy", d: "Replay recorded history through a different policy with no model calls: which past exploits it stops, which legitimate tasks it breaks." },
+  { i: Brain, t: "Ask the graph", d: "GraphRAG over every step. The answer cites its evidence, and the parts of the 3D graph it drew on light up." },
+];
 
-function Exploits({ pairs }: { pairs: Pair[] }) {
-  const [all, setAll] = useState(false);
-  const shown = all ? pairs : pairs.slice(0, 6);
-  if (!pairs.length) return <div className="empty">No successful exploits recorded yet.</div>;
-  return (
-    <div className="card">
-      {shown.map((p) => (
-        <div className="exploit" key={p.key}>
-          <h3>{p.technique.replaceAll("_", " ")} <span>via {p.surface}{p.operator && p.operator !== "none" ? ` · ${p.operator}` : ""}</span></h3>
-          {p.off && (
-            <div className="lane"><div className="tag">Guard off</div><BreachLine nodes={p.off.strip} /></div>
-          )}
-          {p.enforce ? (
-            <div className="lane"><div className="tag">Guard on</div><BreachLine nodes={p.enforce.strip} /></div>
-          ) : (
-            <div className="lane"><div className="tag">Guard on</div><span style={{ color: "var(--ink-3)" }}>Not replayed yet.</span></div>
-          )}
-        </div>
-      ))}
-      {pairs.length > 6 && (
-        <p style={{ margin: "12px 0 0" }}>
-          <button className="btn ghost" onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${pairs.length}`}</button>
-        </p>
-      )}
-    </div>
-  );
-}
+const FLOW = [
+  ["Audit", "A static review of what the agent is allowed to do: over-privilege and the lethal trifecta of private data, untrusted input and an exit."],
+  ["Attack", "The attacker plants hidden instructions in what the agent reads and tries to make it leak a canary. It learns from every attempt."],
+  ["Prove", "The oracle checks the world, not the transcript. Winners are re-run for reliability and shrunk to the smallest payload that still works."],
+  ["Defend", "Every working exploit is replayed through the Rust guard. Benign tasks run both ways, and defenses are ablated one at a time."],
+  ["Report", "A branded security report, laid out by a JSON skeleton, in HTML, PDF, Markdown, JSON or SARIF."],
+];
 
-function Ablation({ v }: { v: Validation }) {
-  const rows = Object.keys(DEFENSE_NAMES).map((d) => ({
-    d,
-    without: v.ablation?.find((a) => a.defense === d && a.variant === "without"),
-    only: v.ablation?.find((a) => a.defense === d && a.variant === "only"),
-  }));
-  if (!v.ablation?.length) return <div className="empty">No ablation data. Run a validation with ablation on.</div>;
-  const cell = (a?: { successes: number; attempts: number }) =>
-    a ? <span className={`cell ${a.successes ? "hot" : "cool"}`}>{a.successes}/{a.attempts}</span> : "–";
-  return (
-    <div className="card">
-      <table>
-        <thead><tr><th>Defense</th><th className="num">Still work without it</th><th className="num">Still work with only it</th></tr></thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.d}><td><span className="mono">{r.d}</span> {DEFENSE_NAMES[r.d]}</td><td className="num">{cell(r.without)}</td><td className="num">{cell(r.only)}</td></tr>
-          ))}
-        </tbody>
-      </table>
-      <p style={{ color: "var(--ink-3)", fontSize: 13, margin: "10px 0 0" }}>
-        Exploits that still succeed, out of those replayed. D1 fences model traffic, so it only shows an effect against a live model.
-      </p>
-    </div>
-  );
-}
+export default function Landing() {
+  useEffect(() => {
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) return;
+    animate(".hero-in", { opacity: [0, 1], translateY: [28, 0], delay: stagger(110, { start: 150 }), duration: 900, ease: "outExpo" });
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        io.unobserve(e.target);
+        const el = e.target as HTMLElement;
+        animate(el, { opacity: [0, 1], translateY: [24, 0], duration: 800, ease: "outQuad" });
+        const kids = el.querySelectorAll(".tile, .box, .steps-flow li, tbody tr, .status div");
+        if (kids.length) animate(kids, { opacity: [0, 1], translateY: [14, 0], delay: stagger(70), duration: 600, ease: "outQuad" });
+      }
+    }, { threshold: 0.08 });
+    document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
 
-function Utility({ v }: { v: Validation }) {
-  const rows = [
-    { label: "Guard off", r: v.regression_guard_off },
-    { label: "Guard on", r: v.regression_guard_on },
-  ];
   return (
-    <div className="card">
-      <h3 style={{ fontSize: 16, marginBottom: 10 }}>Legitimate tasks</h3>
-      {rows.map(({ label, r }) => (
-        <div key={label} style={{ marginBottom: 12 }}>
-          <div className="kv" style={{ borderBottom: 0, padding: "0 0 4px" }}><span>{label}</span><span>{r.passed} of {r.tasks} pass</span></div>
-          <div className="bar" aria-hidden="true"><i style={{ width: pct(r.utility) }} /></div>
-        </div>
-      ))}
-      {v.regression_guard_on.failed?.length ? (
-        <p className="err">Broken by the guard: {v.regression_guard_on.failed.join(", ")}</p>
-      ) : (
-        <p style={{ color: "var(--ink-2)", margin: 0 }}>The guard did not break any benign task.</p>
-      )}
-    </div>
-  );
-}
+    <div className="lp">
+      <header className="lp-nav">
+        <Link href="/" className="brand"><Logo size={26} /> AVHSOL</Link>
+        <nav aria-label="Sections"><a href="#what">What it does</a><a href="#flow">How a run works</a><a href="#arch">Architecture</a><a href="#results">Results</a><a href="#status">Status</a></nav>
+        <Link className="btn" href="/console">Open console <ArrowRight size={15} /></Link>
+      </header>
 
-function GuardCost({ v }: { v: Validation }) {
-  const m = v.guard_metrics;
-  if (!m) return null;
-  return (
-    <div className="card">
-      <h3 style={{ fontSize: 16, marginBottom: 10 }}>What the guard did</h3>
-      <div className="kv"><span>Allowed</span><span>{m.decisions.allow ?? 0}</span></div>
-      <div className="kv"><span>Denied</span><span>{m.decisions.deny ?? 0}</span></div>
-      {Object.entries(m.by_rule).map(([k, n]) => (
-        <div className="kv" key={k}><span><span className="mono">{k}</span> {DEFENSE_NAMES[k] ?? ""}</span><span>{n}</span></div>
-      ))}
-      <div className="kv"><span>Decision time</span><span>p50 {m.decision_latency_us.p50} µs · p99 {m.decision_latency_us.p99} µs</span></div>
-    </div>
-  );
-}
-
-function Audit({ a }: { a: AuditData }) {
-  return (
-    <div className="card">
-      <h3 style={{ fontSize: 16, marginBottom: 4 }}>Permission audit</h3>
-      <p style={{ color: "var(--ink-3)", margin: "0 0 8px", fontSize: 13 }}>{a.scenario.name}: {a.scenario.tools.join(", ")}</p>
-      {a.findings.length === 0 && <p style={{ margin: 0 }}>No over-privilege found.</p>}
-      {a.findings.map((f, i) => (
-        <div className="kv" key={i} style={{ alignItems: "flex-start" }}>
-          <span><span className={`sev ${f.severity}`}>{f.severity}</span> <span className="mono">{f.kind}</span><br /><span style={{ fontSize: 13 }}>{f.detail}</span></span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Hunt({ s }: { s: Summary }) {
-  const rows = [
-    { label: "Guard off", r: s.hunt?.guard_off },
-    { label: "Guard enforcing", r: s.hunt?.guard_enforce },
-  ].filter((x) => x.r);
-  if (!rows.length) return null;
-  return (
-    <section className="section">
-      <header><h2>What the attacker found on its own</h2><span className="sub">adaptive search, not a fixed list</span></header>
-      <div className="card">
-        {rows.map(({ label, r }) => (
-          <div key={label} style={{ marginBottom: 14 }}>
-            <p style={{ margin: "0 0 6px", fontWeight: 600 }}>{label}: {r!.discoveries?.length ?? 0} discoveries in {r!.attempts} attempts</p>
-            {(r!.discoveries ?? []).map((d) => {
-              const rv = revealHidden(d.minimized_payload);
-              return (
-                <div key={d.trace_id} className="exploit">
-                  <h3>{d.arm.replaceAll("|", " · ")} <span>reliability {pct(d.reliability)} over {d.runs} runs · found at attempt {d.found_at_attempt}</span></h3>
-                  <div className="code" style={{ marginTop: 6 }}>
-                    {rv.parts.map((p, i) => (p.hidden ? <mark key={i} className="hidden-text" title="invisible in the document">{p.t}</mark> : <span key={i}>{p.t}</span>))}
-                  </div>
-                  <Link href={`/traces/${d.trace_id}`} className="mono">open trace {d.trace_id}</Link>
-                </div>
-              );
-            })}
+      <section className="lp-hero">
+        <Lattice />
+        <div className="wrap">
+          <div className="eyebrow hero-in">Autonomous red team for AI agents</div>
+          <h1 className="hero-in">Break your agent <span className="grad">before someone else does.</span></h1>
+          <p className="lede hero-in">AVHSOL attacks an agent the way a real adversary would, proves what worked with a replayable trace, shows whether a guard stops it, and keeps everything the agent did in a graph your security team can question.</p>
+          <div className="cta hero-in">
+            <Link className="btn" href="/console">Open the console <ArrowRight size={15} /></Link>
+            <Link className="btn ghost" href="/console/graph">Explore the neural graph</Link>
           </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function Advisories({ items }: { items: Advisory[] }) {
-  const ok = items.filter((a) => !a.error && a.title);
-  if (!ok.length) return null;
-  return (
-    <section className="section">
-      <header><h2>Analyst notes</h2><span className="sub">written by {ok[0].model}; explanation only, verdicts come from the oracle</span></header>
-      <div className="grid3">
-        {ok.map((a) => (
-          <div className="card" key={a.trace_id}>
-            <h3 style={{ fontSize: 16, marginBottom: 6 }}>{a.title}</h3>
-            <p style={{ margin: "0 0 8px" }}>{a.summary}</p>
-            <p style={{ margin: "0 0 8px", color: "var(--ink-2)" }}><b>Why it worked.</b> {a.root_cause}</p>
-            <ul style={{ margin: 0, paddingLeft: 18 }}>{(a.fixes ?? []).map((f, i) => <li key={i}>{f}</li>)}</ul>
-            <p style={{ margin: "10px 0 0" }}><Link className="mono" href={`/traces/${a.trace_id}`}>{a.trace_id}</Link></p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ReportPanel() {
-  const info = useFetch<{ skeletons: string[]; formats: string[]; pdf: boolean }>("/api/report/skeletons");
-  const [skeleton, setSkeleton] = useState("security-report");
-  const [busy, setBusy] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  async function get(format: string) {
-    setBusy(format);
-    setErr(null);
-    try {
-      await downloadReport(format, skeleton);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    }
-    setBusy("");
-  }
-  if (!info.data) return null;
-  const label: Record<string, string> = { html: "HTML", pdf: "PDF", md: "Markdown", json: "JSON", sarif: "SARIF" };
-  return (
-    <section className="section">
-      <header><h2>Security report</h2><span className="sub">cover, findings with timelines, charts, remediation, limitations</span></header>
-      <div className="card form">
-        <label>Layout
-          <select value={skeleton} onChange={(e) => setSkeleton(e.target.value)} style={{ font: "inherit", padding: "7px 9px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)" }}>
-            {info.data.skeletons.map((s) => <option key={s} value={s}>{s.replaceAll("-", " ")}</option>)}
-          </select>
-        </label>
-        {info.data.formats.filter((f) => f !== "pdf" || info.data!.pdf).map((f) => (
-          <button key={f} className="btn ghost" disabled={!!busy} onClick={() => get(f)}>{busy === f ? "Preparing…" : `Download ${label[f] ?? f}`}</button>
-        ))}
-        {err && <p className="err" style={{ flexBasis: "100%", margin: 0 }}>{err}</p>}
-      </div>
-    </section>
-  );
-}
-
-export default function Overview() {
-  const sum = useFetch<Summary>("/api/summary", 5000);
-  const pairs = useFetch<Pair[]>("/api/pairs", 5000);
-  const audit = useFetch<AuditData>("/api/audit");
-  const adv = useFetch<Advisory[]>("/api/advisories", 10000);
-  if (sum.error && !sum.data) {
-    return (
-      <section className="verdict">
-        <h1>The API isn’t reachable.</h1>
-        <p className="err">{sum.error}. Start it with <span className="mono">avhsol serve -addr 127.0.0.1:8787</span>.</p>
+          <p className="by hero-in">Agentic Vulnerability Hunter with Simulated Offensive Layers · Made by David Porathur and Rishit Baitule</p>
+        </div>
       </section>
-    );
-  }
-  const v = sum.data?.validation ?? null;
-  return (
-    <>
-      <Verdict v={v} />
-      <section className="section">
-        <header><h2>How each exploit travels</h2><span className="sub">red = data left, teal = the guard cut the chain</span></header>
-        <Exploits pairs={pairs.data ?? []} />
-      </section>
-      {v && (
-        <section className="section">
-          <header><h2>What carried the weight</h2></header>
-          <div className="grid3">
-            <Ablation v={v} />
-            <Utility v={v} />
-            <GuardCost v={v} />
-          </div>
-        </section>
-      )}
-      {v && <ReportPanel />}
-      {sum.data && <Hunt s={sum.data} />}
-      {adv.data && <Advisories items={adv.data} />}
-      {audit.data && (
-        <section className="section">
-          <header><h2>Before any attack</h2><span className="sub">static review of what the agent is allowed to do</span></header>
-          <Audit a={audit.data} />
-        </section>
-      )}
-    </>
+
+      <section className="sec" id="what"><div className="wrap reveal">
+        <div className="eyebrow">What it does</div>
+        <h2>Evidence, not opinions.</h2>
+        <p className="sub">Most agent testing ends with a model saying it looks safe. AVHSOL ends with a trace you can replay, a verdict a script produced, and a graph showing exactly how the data moved.</p>
+        <div className="grid c3">
+          {FEATURES.map(({ i: I, t, d }) => (<div className="tile" key={t}><div className="ico"><I size={22} /></div><h3>{t}</h3><p>{d}</p></div>))}
+        </div>
+      </div></section>
+
+      <section className="sec" id="flow"><div className="wrap reveal">
+        <div className="eyebrow">How a run works</div>
+        <h2>From a hidden sentence to a signed report.</h2>
+        <ol className="steps-flow">{FLOW.map(([t, d]) => (<li key={t}><b>{t}</b><span>{d}</span></li>))}</ol>
+      </div></section>
+
+      <section className="sec" id="arch"><div className="wrap reveal">
+        <div className="eyebrow">Architecture</div>
+        <h2>Go orchestrates. Rust enforces. TypeScript runs the agents.</h2>
+        <p className="sub">The control plane never trusts the target: model traffic and tool calls are recorded at the Rust proxy, success is decided by oracles that look at the world, and every step lands in a signed trace and a graph.</p>
+        <ArchDiagram />
+      </div></section>
+
+      <section className="sec" id="graph"><div className="wrap reveal">
+        <div className="eyebrow">The graph</div>
+        <h2>Two clocks. Nothing is overwritten.</h2>
+        <p className="sub">The graph tracks when something happened (valid time) and when we recorded or changed our mind (record time). A correction closes the old belief and links the new one, so you can always ask what the team believed on a given day. Questions are answered with GraphRAG, and a spreading-activation pass lights up the steps, payloads, techniques and defenses the answer touched, fading with causal distance.</p>
+        <div className="grid c3">
+          <div className="tile"><h3>Valid time</h3><p>When the tool call or leak actually occurred.</p></div>
+          <div className="tile"><h3>Record time</h3><p>When AVHSOL stored it, or revised its verdict.</p></div>
+          <div className="tile"><h3>Provenance</h3><p>TAINTED_BY, EVALUATED, STOPPED and REPLAY_OF edges connect cause to effect.</p></div>
+        </div>
+      </div></section>
+
+      <section className="sec" id="results"><div className="wrap reveal">
+        <div className="eyebrow">Results so far</div>
+        <h2>Real numbers, with the caveats attached.</h2>
+        <table className="res"><thead><tr><th>Setup</th><th>Result</th></tr></thead><tbody>
+          <tr><td>Sandboxed coding agent, guard off</td><td><span className="num">5 / 13</span> valid runs leaked the canary credentials; control runs <span className="num">0 / 6</span></td></tr>
+          <tr><td>Same attacks, guard enforcing</td><td><span className="num">5 / 5</span> blocked; <span className="num">3 / 3</span> benign tasks still pass</td></tr>
+          <tr><td>HR assistant, email exfiltration</td><td>Model resisted <span className="num">0 / 12</span> fixed and <span className="num">0 / 15</span> model-written payloads</td></tr>
+        </tbody></table>
+        <div className="caveat">One model, small samples, thinking disabled on the coding target. An errored run is excluded, never counted as defended. Runs against the simulated model are labelled and never rated.</div>
+      </div></section>
+
+      <section className="sec" id="security"><div className="wrap reveal">
+        <div className="eyebrow">Security of the platform</div>
+        <h2>The tool that tests agents has to be hard to attack too.</h2>
+        <div className="grid c3">
+          <div className="tile"><div className="ico"><Lock size={22} /></div><h3>Access</h3><p>Loopback-only services, role tokens compared in constant time, failed-login throttling, security headers.</p></div>
+          <div className="tile"><div className="ico"><ScrollText size={22} /></div><h3>Audit</h3><p>A hash-chained log of every state-changing request. Signed traces; a re-chained forgery fails verification.</p></div>
+          <div className="tile"><div className="ico"><ShieldCheck size={22} /></div><h3>Containment</h3><p>Hardened containers, databases that reject anonymous access, secrets redacted before storage.</p></div>
+        </div>
+      </div></section>
+
+      <section className="sec" id="status"><div className="wrap reveal">
+        <div className="eyebrow">Status</div>
+        <h2>What is built, and what is next.</h2>
+        <div className="status">
+          <div><span className="tag done">built</span>Attack, oracle, signed traces, guard replay, benign regression, ablation, policy time machine</div>
+          <div><span className="tag done">built</span>Bitemporal graph, GraphRAG, 3D neural graph with run replay, hardened API, report engine</div>
+          <div><span className="tag todo">next</span>Bring-your-own-agent connectors: Anthropic wire format, MCP, plain HTTP agents</div>
+          <div><span className="tag todo">next</span>Automatic scenarios for arbitrary tool lists; live fork-from-a-step revive</div>
+          <div><span className="tag todo">next</span>MicroVM or gVisor sandbox for hostile agents; TLS on database ports</div>
+        </div>
+      </div></section>
+
+      <footer><div className="wrap">
+        <div className="big">Test the agent. Keep the proof.</div>
+        <p>Made by David Porathur and Rishit Baitule. Agent harness forked from pi (MIT); bitemporal modelling follows utopia (Apache-2.0); detectors ported from TRIVEKTRA (GPLv3).</p>
+        <p><Link href="/console" style={{ color: "var(--cyan)" }}>Open the console →</Link></p>
+      </div></footer>
+    </div>
   );
 }

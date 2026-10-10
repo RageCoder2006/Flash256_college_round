@@ -157,6 +157,11 @@ export function setToken(t: string) {
 }
 
 export class AuthError extends Error {}
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+  }
+}
 
 function headers(extra?: Record<string, string>): Record<string, string> {
   const t = getToken();
@@ -168,7 +173,7 @@ async function check(r: Response, path: string) {
     window.dispatchEvent(new Event("ab-auth-required"));
     throw new AuthError("sign in required");
   }
-  if (!r.ok) throw new Error((await r.text()).trim() || `${path}: HTTP ${r.status}`);
+  if (!r.ok) throw new ApiError((await r.text()).trim() || `${path}: HTTP ${r.status}`, r.status);
 }
 
 export async function get<T>(path: string): Promise<T> {
@@ -297,6 +302,7 @@ export interface GNode {
   label: string;
   seq: number;
   flag?: string;
+  meta?: Record<string, unknown>;
 }
 export interface GEdge {
   from: string;
@@ -317,8 +323,13 @@ export interface SimilarHit {
   succeeded: boolean;
   text: string;
 }
+export interface Activation {
+  id: string;
+  level: number;
+}
 export interface GraphAnswer {
   answer: string;
+  activation?: Activation[];
   evidence: SimilarHit[];
   episodes: string[];
 }
@@ -336,4 +347,15 @@ export async function downloadReport(format: string, skeleton: string) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+export interface Note {
+  text: string;
+  risk: "info" | "watch" | "danger" | "blocked";
+}
+export interface Narration {
+  episode: string;
+  source: "llm" | "rules";
+  summary: string;
+  steps: Record<string, Note>;
 }

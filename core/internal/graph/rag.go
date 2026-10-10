@@ -19,6 +19,7 @@ type SimilarHit struct {
 	Guard     string  `json:"guard_mode"`
 	Succeeded bool    `json:"succeeded"`
 	Text      string  `json:"text"`
+	PayloadID string  `json:"payload_id,omitempty"`
 }
 
 // Similar finds past payloads and steps close to the text. If successOnly, it keeps only those from
@@ -54,7 +55,7 @@ func (s *Store) Similar(ctx context.Context, ix *Index, text string, k int, kind
 			continue
 		}
 		sh := SimilarHit{Score: h.Score, Kind: asStr(h.Payload["kind"]), Episode: ep, Technique: asStr(h.Payload["technique"]),
-			Guard: asStr(h.Payload["guard_mode"]), Succeeded: won[ep], Text: asStr(h.Payload["text"])}
+			Guard: asStr(h.Payload["guard_mode"]), Succeeded: won[ep], Text: asStr(h.Payload["text"]), PayloadID: asStr(h.Payload["payload_id"])}
 		if v, ok := h.Payload["seq"].(float64); ok {
 			sh.Seq = int64(v)
 		}
@@ -91,6 +92,8 @@ type Answer struct {
 	Text     string       `json:"answer"`
 	Evidence []SimilarHit `json:"evidence"`
 	Episodes []string     `json:"episodes"`
+	// Activation says which graph nodes the answer drew on, and how strongly (see Activate).
+	Activation []Activation `json:"activation"`
 }
 
 const askSystem = `You are a security analyst answering questions about recorded tests of AI agents.
@@ -148,7 +151,11 @@ func (s *Store) Ask(ctx context.Context, ix *Index, m *llm.Client, question stri
 	if err != nil {
 		return nil, err
 	}
-	return &Answer{Text: strings.TrimSpace(txt), Evidence: hits, Episodes: eps}, nil
+	act, err := s.Activate(ctx, hits)
+	if err != nil {
+		return nil, err
+	}
+	return &Answer{Text: strings.TrimSpace(txt), Evidence: hits, Episodes: eps, Activation: act}, nil
 }
 
 func keys(m map[string]bool) []string {
@@ -188,4 +195,26 @@ func (s *Store) episodeLabel(ctx context.Context, ep string) string {
 	default:
 		return fmt.Sprintf(" (%s run, guard=%s)", asStr(r["kind"]), guard)
 	}
+}
+
+// Probe is the model-free half of Ask: retrieve, then compute the activation. It answers "which parts of
+// the graph relate to this?" instantly and works for roles that may not call the model.
+func (s *Store) Probe(ctx context.Context, ix *Index, text string, k int) (*Answer, error) {
+	hits, err := s.Similar(ctx, ix, text, k, "", false)
+	if err != nil {
+		return nil, err
+	}
+	act, err := s.Activate(ctx, hits)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var eps []string
+	for _, h := range hits {
+		if h.Episode != "" && !seen[h.Episode] {
+			seen[h.Episode] = true
+			eps = append(eps, h.Episode)
+		}
+	}
+	return &Answer{Evidence: hits, Episodes: eps, Activation: act}, nil
 }

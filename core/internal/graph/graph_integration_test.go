@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,5 +123,70 @@ func TestProvenanceEdgesLinkReadToLaterCalls(t *testing.T) {
 	}
 	if !tainted {
 		t.Fatalf("the call after the untrusted read must be tainted by it: %+v", path)
+	}
+}
+
+func TestOverviewContainsTheEpisodeAndWhatItTouches(t *testing.T) {
+	st, ctx := openOrSkip(t)
+	id := fmt.Sprintf("itest-%d", time.Now().UnixNano())
+	cleanup(t, st, ctx, id)
+	tr := fakeTrace(id, true)
+	if _, err := st.IngestTrace(ctx, tr, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	g, err := st.Overview(ctx, Filter{Scenario: id + "-sc", IncludeSimulated: true}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	have := map[string]bool{}
+	for _, n := range g.Nodes {
+		have[n.ID] = true
+	}
+	for _, want := range []string{"ep:" + id, "tech:" + id + "-tech", "tool:read_document", "tool:send_email"} {
+		if !have[want] {
+			t.Errorf("overview is missing %s (have %v)", want, have)
+		}
+	}
+	var planted bool
+	for _, e := range g.Edges {
+		if e.From == "ep:"+id && e.Type == "PLANTED" {
+			planted = true
+		}
+	}
+	if !planted {
+		t.Fatal("the episode must be linked to its payload")
+	}
+}
+
+func TestActivationIsStrongestAtTheHitAndFadesWithDistance(t *testing.T) {
+	st, ctx := openOrSkip(t)
+	id := fmt.Sprintf("itest-%d", time.Now().UnixNano())
+	other := id + "x"
+	cleanup(t, st, ctx, id)
+	for _, e := range []string{id, other} {
+		if _, err := st.IngestTrace(ctx, fakeTrace(e, true), nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// the query matched the send_email call (step 3) of the first episode
+	act, err := st.Activate(ctx, []SimilarHit{{Kind: "step", Episode: id, Seq: 3, Score: 0.9}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lvl := map[string]float64{}
+	for _, a := range act {
+		lvl[a.ID] = a.Level
+	}
+	hit, neighbour, far := lvl[id+"#3"], lvl[id+"#2"], lvl[id+"#1"]
+	if !(hit == 1 && neighbour > far && neighbour < hit && far > 0) {
+		t.Fatalf("activation must fade with distance: hit=%.2f neighbour(1 hop)=%.2f far(2 hops)=%.2f", hit, neighbour, far)
+	}
+	if lvl["ep:"+id] <= 0 || lvl["tech:"+id+"-tech"] <= 0 {
+		t.Fatalf("the owning episode and its technique must light up: %v", lvl)
+	}
+	for k := range lvl {
+		if strings.Contains(k, other) {
+			t.Fatalf("an unrelated episode must stay dark, but %s is active", k)
+		}
 	}
 }

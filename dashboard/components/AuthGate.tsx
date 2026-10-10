@@ -72,9 +72,9 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   }
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, fontSize: 13, color: "var(--ink-3)", marginTop: 8 }}>
-        <span>Signed in as <b style={{ color: "var(--ink-2)" }}>{role}</b></span>
-        <button className="btn ghost" style={{ padding: "2px 10px", fontSize: 13 }} onClick={() => { setToken(""); setNeeds(true); setRole(null); }}>Sign out</button>
+      <div className="statusbar">
+        <span className="who"><span className="dot" aria-hidden="true" />Signed in as <b style={{ color: "var(--ink)" }}>{role}</b></span>
+        <button className="btn ghost" style={{ padding: "3px 12px", fontSize: 13 }} onClick={() => { setToken(""); setNeeds(true); setRole(null); }}>Sign out</button>
       </div>
       {children}
     </>

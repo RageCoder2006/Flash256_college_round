@@ -284,6 +284,8 @@ type GNode struct {
 	Label string `json:"label"`
 	Seq   int64  `json:"seq"`
 	Flag  string `json:"flag,omitempty"` // untrusted | blocked | leak
+	// Meta carries display properties for the overview constellation (guard mode, outcome, ...).
+	Meta map[string]any `json:"meta,omitempty"`
 }
 
 type GEdge struct {

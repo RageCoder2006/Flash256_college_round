@@ -33,7 +33,7 @@ export default function Traces() {
             <tbody>
               {rows.map((t) => (
                 <tr key={t.id}>
-                  <td><Link href={`/traces/${t.id}`} className="mono">{t.id}</Link></td>
+                  <td><Link href={`/console/traces/${t.id}`} className="mono">{t.id}</Link></td>
                   <td>{t.kind === "attack" ? `${(t.technique ?? "").replaceAll("_", " ")} · ${t.surface}${t.operator && t.operator !== "none" ? ` · ${t.operator}` : ""}` : "benign task"}</td>
                   <td><span className="mono">{t.guard_mode}</span></td>
                   <td>

@@ -152,6 +152,36 @@ func (s *Server) graphRoutes(mux *http.ServeMux) {
 		}
 		writeJSON(w, hits)
 	})
+	h(mux, "GET /api/graph/overview", RoleViewer, func(w http.ResponseWriter, r *http.Request) {
+		if !s.needGraph(w) {
+			return
+		}
+		n, _ := strconv.Atoi(r.URL.Query().Get("episodes"))
+		g, err := s.cfg.Graph.Overview(r.Context(), filterFrom(r), n)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, g)
+	})
+	h(mux, "POST /api/graph/activate", RoleViewer, func(w http.ResponseWriter, r *http.Request) {
+		if !s.needGraph(w) || s.cfg.Index == nil {
+			return
+		}
+		var b struct {
+			Text string `json:"text"`
+		}
+		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&b) != nil || strings.TrimSpace(b.Text) == "" {
+			http.Error(w, "send {text}", http.StatusBadRequest)
+			return
+		}
+		a, err := s.cfg.Graph.Probe(r.Context(), s.cfg.Index, b.Text, 8)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, a)
+	})
 	h(mux, "POST /api/graph/ask", RoleAnalyst, func(w http.ResponseWriter, r *http.Request) {
 		if !s.needGraph(w) {
 			return
@@ -173,6 +203,32 @@ func (s *Server) graphRoutes(mux *http.ServeMux) {
 			return
 		}
 		writeJSON(w, a)
+	})
+	h(mux, "GET /api/graph/episodes/{id}/narrate", RoleViewer, func(w http.ResponseWriter, r *http.Request) {
+		if !s.needGraph(w) || !safeID(r.PathValue("id")) {
+			return
+		}
+		n, err := s.cfg.Graph.Narrate(r.Context(), nil, r.PathValue("id"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, n)
+	})
+	h(mux, "POST /api/graph/episodes/{id}/narrate", RoleAnalyst, func(w http.ResponseWriter, r *http.Request) {
+		if !s.needGraph(w) || !safeID(r.PathValue("id")) {
+			return
+		}
+		if s.cfg.LLM == nil {
+			http.Error(w, "no model configured", http.StatusServiceUnavailable)
+			return
+		}
+		n, err := s.cfg.Graph.Narrate(r.Context(), s.cfg.LLM, r.PathValue("id"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, n)
 	})
 	h(mux, "POST /api/graph/correct", RoleAnalyst, func(w http.ResponseWriter, r *http.Request) {
 		if !s.needGraph(w) {

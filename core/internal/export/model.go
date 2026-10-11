@@ -30,6 +30,8 @@ type Finding struct {
 	Evidence    string        `json:"evidence"`
 	TraceID     string        `json:"trace_id"`
 	Path        []breach.Node `json:"path"`
+	Stages      int           `json:"stages,omitempty"` // how many conversation stages the attack path spans (1 = single-hop)
+	MultiStage  bool          `json:"multi_stage,omitempty"`
 	Payload     string        `json:"payload"` // redacted
 	HiddenChars int           `json:"hidden_chars,omitempty"`
 

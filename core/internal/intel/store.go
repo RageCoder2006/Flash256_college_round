@@ -152,7 +152,7 @@ func (s *Store) Query(f Filter) []Item {
 	q := strings.ToLower(f.Query)
 	var out []Item
 	for _, it := range s.items {
-		if f.Source != "" && it.Source != f.Source {
+		if f.Source != "" && it.Source != f.Source && !(f.Source == "feeds" && strings.HasPrefix(it.Source, "feed:")) {
 			continue
 		}
 		if f.Kind != "" && it.Kind != f.Kind {

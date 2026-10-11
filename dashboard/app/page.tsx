@@ -1,10 +1,10 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { animate, stagger } from "animejs";
-import { ArrowRight, Brain, Crosshair, Fingerprint, GitBranch, Lock, ScrollText, ShieldCheck, Waypoints } from "lucide-react";
-import { ArchDiagram } from "@/components/ArchDiagram";
+import { ArrowRight, StickyNote } from "lucide-react";
 import { Logo } from "@/components/Logo";
+import { SLIDES } from "@/components/pitch/slides";
 import "./landing.css";
 
 /** Drifting nodes and synapses behind the hero. Cheap 2D canvas; stops when off screen or for reduced motion. */
@@ -48,135 +48,106 @@ function Lattice() {
   return <canvas ref={ref} aria-hidden="true" />;
 }
 
-const FEATURES = [
-  { i: Crosshair, t: "It attacks like an adversary", d: "A pi agent driven by your own model hides instructions in the content your agent reads, then searches for the ones that work instead of replaying a fixed list." },
-  { i: ShieldCheck, t: "The oracle decides, not the model", d: "A planted canary secret reaching a canary server, a host file read from the sandbox, a forbidden tool call. Deterministic checks, never an opinion." },
-  { i: Fingerprint, t: "Signed, replayable evidence", d: "Every step is hash-chained and Ed25519-signed. Secrets are reduced to fingerprints before anything is stored." },
-  { i: Waypoints, t: "A causal graph of the run", d: "Which untrusted read tainted which call, what the guard decided, which secret was touched. Stored in Neo4j with vectors in Qdrant." },
-  { i: GitBranch, t: "A time machine for policy", d: "Replay recorded history through a different policy with no model calls: which past exploits it stops, which legitimate tasks it breaks." },
-  { i: Brain, t: "Ask the graph", d: "GraphRAG over every step. The answer cites its evidence, and the parts of the 3D graph it drew on light up." },
-];
 
-const FLOW = [
-  ["Audit", "A static review of what the agent is allowed to do: over-privilege and the lethal trifecta of private data, untrusted input and an exit."],
-  ["Attack", "The attacker plants hidden instructions in what the agent reads and tries to make it leak a canary. It learns from every attempt."],
-  ["Prove", "The oracle checks the world, not the transcript. Winners are re-run for reliability and shrunk to the smallest payload that still works."],
-  ["Defend", "Every working exploit is replayed through the Rust guard. Benign tasks run both ways, and defenses are ablated one at a time."],
-  ["Report", "A branded security report, laid out by a JSON skeleton, in HTML, PDF, Markdown, JSON or SARIF."],
-];
+const LABEL: Record<string, string> = {
+  problem: "The problem", gap: "Why testing falls short", what: "What it is", flow: "How a run works", proof: "Evidence", arch: "Architecture",
+  intel: "Threat intelligence", connect: "Test any agent", contain: "Containment", graph: "Graph and replay", whatif: "Replay and fork", report: "The report",
+  results: "Results", security: "Platform security", status: "Honest status", close: "Demo",
+};
 
 export default function Landing() {
+  const sections = SLIDES.filter((s) => s.id !== "title");
+  const [active, setActive] = useState("top");
+  const [notes, setNotes] = useState(false);
+  const bar = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduced) return;
-    animate(".hero-in", { opacity: [0, 1], translateY: [28, 0], delay: stagger(110, { start: 150 }), duration: 900, ease: "outExpo" });
+    if (!reduced) animate(".hero-in", { opacity: [0, 1], translateY: [28, 0], delay: stagger(110, { start: 150 }), duration: 900, ease: "outExpo" });
+    // each section animates in once, the first time it is mostly on screen, and becomes the "current" one for the dots and notes
+    const seen = new WeakSet<Element>();
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {
         if (!e.isIntersecting) continue;
-        io.unobserve(e.target);
         const el = e.target as HTMLElement;
-        animate(el, { opacity: [0, 1], translateY: [24, 0], duration: 800, ease: "outQuad" });
-        const kids = el.querySelectorAll(".tile, .box, .steps-flow li, tbody tr, .status div");
-        if (kids.length) animate(kids, { opacity: [0, 1], translateY: [14, 0], delay: stagger(70), duration: 600, ease: "outQuad" });
+        setActive(el.id);
+        if (seen.has(el) || reduced) continue;
+        seen.add(el);
+        const rv = el.querySelectorAll(".rv");
+        if (rv.length) animate(rv, { opacity: [0, 1], translateY: [26, 0], delay: stagger(95, { start: 60 }), duration: 750, ease: "outExpo" });
       }
-    }, { threshold: 0.08 });
-    document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
-    return () => io.disconnect();
-  }, []);
+    }, { threshold: 0.35 });
+    document.querySelectorAll(".ps, .lp-hero").forEach((el) => io.observe(el));
+    const onScroll = () => {
+      const h = document.documentElement;
+      if (bar.current) bar.current.style.width = `${(h.scrollTop / Math.max(1, h.scrollHeight - h.clientHeight)) * 100}%`;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    const key = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const ids = ["top", ...sections.map((s) => s.id)];
+      const idx = ids.indexOf(document.querySelector<HTMLElement>(".ps.cur, .lp-hero.cur")?.id ?? "top");
+      if (e.key.toLowerCase() === "n") setNotes((v) => !v);
+      else if (e.key === "ArrowDown" || e.key === "PageDown") { e.preventDefault(); document.getElementById(ids[Math.min(ids.length - 1, idx + 1)])?.scrollIntoView({ behavior: "smooth" }); }
+      else if (e.key === "ArrowUp" || e.key === "PageUp") { e.preventDefault(); document.getElementById(ids[Math.max(0, idx - 1)])?.scrollIntoView({ behavior: "smooth" }); }
+    };
+    window.addEventListener("keydown", key);
+    return () => { io.disconnect(); window.removeEventListener("scroll", onScroll); window.removeEventListener("keydown", key); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    document.querySelectorAll(".ps, .lp-hero").forEach((el) => el.classList.toggle("cur", el.id === active));
+  }, [active]);
+
+  const curNotes = sections.find((s) => s.id === active)?.notes ?? "Open with the promise: attack an agent the way a real adversary would, prove what worked, keep the proof. Then scroll: the problem, the platform, the architecture, threat intelligence, results with caveats, and finish in the live demo.";
 
   return (
     <div className="lp">
+      <div className="progress" ref={bar} aria-hidden="true" />
       <header className="lp-nav">
         <Link href="/" className="brand"><Logo size={26} /> AVHSOL</Link>
-        <nav aria-label="Sections"><a href="#what">What it does</a><a href="#flow">How a run works</a><a href="#arch">Architecture</a><a href="#results">Results</a><a href="#status">Status</a></nav>
+        <nav aria-label="Sections"><a href="#what">What it is</a><a href="#arch">Architecture</a><a href="#intel">Threat intel</a><a href="#results">Results</a><a href="#close">Demo</a></nav>
         <Link className="btn" href="/console">Open console <ArrowRight size={15} /></Link>
       </header>
 
-      <section className="lp-hero">
+      <nav className="snav" aria-label="Page sections">
+        <a href="#top" className={active === "top" ? "on" : ""} aria-label="Top"><span>Start</span></a>
+        {sections.map((s) => <a key={s.id} href={`#${s.id}`} className={active === s.id ? "on" : ""} aria-label={LABEL[s.id] ?? s.id}><span>{LABEL[s.id] ?? s.id}</span></a>)}
+      </nav>
+
+      <section className="lp-hero" id="top">
         <Lattice />
         <div className="wrap">
           <div className="eyebrow hero-in">Autonomous red team for AI agents</div>
           <h1 className="hero-in">Break your agent <span className="grad">before someone else does.</span></h1>
-          <p className="lede hero-in">AVHSOL attacks an agent the way a real adversary would, proves what worked with a replayable trace, shows whether a guard stops it, and keeps everything the agent did in a graph your security team can question.</p>
+          <p className="lede hero-in">AVHSOL attacks an agent through the content it reads, proves what worked with a replayable trace, shows whether a guard stops it, and keeps everything in a graph your security team can question.</p>
           <div className="cta hero-in">
             <Link className="btn" href="/console">Open the console <ArrowRight size={15} /></Link>
-            <Link className="btn ghost" href="/console/graph">Explore the neural graph</Link>
+            <Link className="btn ghost" href="/console/intel">Threat intelligence</Link>
+            <Link className="btn ghost" href="/console/graph">Neural graph</Link>
           </div>
           <p className="by hero-in">Agentic Vulnerability Hunter with Simulated Offensive Layers · Made by David Porathur and Rishit Baitule</p>
+          <div className="hero-scroll hero-in">Scroll ↓  or use the arrow keys</div>
         </div>
       </section>
 
-      <section className="sec" id="what"><div className="wrap reveal">
-        <div className="eyebrow">What it does</div>
-        <h2>Evidence, not opinions.</h2>
-        <p className="sub">Most agent testing ends with a model saying it looks safe. AVHSOL ends with a trace you can replay, a verdict a script produced, and a graph showing exactly how the data moved.</p>
-        <div className="grid c3">
-          {FEATURES.map(({ i: I, t, d }) => (<div className="tile" key={t}><div className="ico"><I size={22} /></div><h3>{t}</h3><p>{d}</p></div>))}
-        </div>
-      </div></section>
-
-      <section className="sec" id="flow"><div className="wrap reveal">
-        <div className="eyebrow">How a run works</div>
-        <h2>From a hidden sentence to a signed report.</h2>
-        <ol className="steps-flow">{FLOW.map(([t, d]) => (<li key={t}><b>{t}</b><span>{d}</span></li>))}</ol>
-      </div></section>
-
-      <section className="sec" id="arch"><div className="wrap reveal">
-        <div className="eyebrow">Architecture</div>
-        <h2>Go orchestrates. Rust enforces. TypeScript runs the agents.</h2>
-        <p className="sub">The control plane never trusts the target: model traffic and tool calls are recorded at the Rust proxy, success is decided by oracles that look at the world, and every step lands in a signed trace and a graph.</p>
-        <ArchDiagram />
-      </div></section>
-
-      <section className="sec" id="graph"><div className="wrap reveal">
-        <div className="eyebrow">The graph</div>
-        <h2>Two clocks. Nothing is overwritten.</h2>
-        <p className="sub">The graph tracks when something happened (valid time) and when we recorded or changed our mind (record time). A correction closes the old belief and links the new one, so you can always ask what the team believed on a given day. Questions are answered with GraphRAG, and a spreading-activation pass lights up the steps, payloads, techniques and defenses the answer touched, fading with causal distance.</p>
-        <div className="grid c3">
-          <div className="tile"><h3>Valid time</h3><p>When the tool call or leak actually occurred.</p></div>
-          <div className="tile"><h3>Record time</h3><p>When AVHSOL stored it, or revised its verdict.</p></div>
-          <div className="tile"><h3>Provenance</h3><p>TAINTED_BY, EVALUATED, STOPPED and REPLAY_OF edges connect cause to effect.</p></div>
-        </div>
-      </div></section>
-
-      <section className="sec" id="results"><div className="wrap reveal">
-        <div className="eyebrow">Results so far</div>
-        <h2>Real numbers, with the caveats attached.</h2>
-        <table className="res"><thead><tr><th>Setup</th><th>Result</th></tr></thead><tbody>
-          <tr><td>Sandboxed coding agent, guard off</td><td><span className="num">5 / 13</span> valid runs leaked the canary credentials; control runs <span className="num">0 / 6</span></td></tr>
-          <tr><td>Same attacks, guard enforcing</td><td><span className="num">5 / 5</span> blocked; <span className="num">3 / 3</span> benign tasks still pass</td></tr>
-          <tr><td>HR assistant, email exfiltration</td><td>Model resisted <span className="num">0 / 12</span> fixed and <span className="num">0 / 15</span> model-written payloads</td></tr>
-        </tbody></table>
-        <div className="caveat">One model, small samples, thinking disabled on the coding target. An errored run is excluded, never counted as defended. Runs against the simulated model are labelled and never rated.</div>
-      </div></section>
-
-      <section className="sec" id="security"><div className="wrap reveal">
-        <div className="eyebrow">Security of the platform</div>
-        <h2>The tool that tests agents has to be hard to attack too.</h2>
-        <div className="grid c3">
-          <div className="tile"><div className="ico"><Lock size={22} /></div><h3>Access</h3><p>Loopback-only services, role tokens compared in constant time, failed-login throttling, security headers.</p></div>
-          <div className="tile"><div className="ico"><ScrollText size={22} /></div><h3>Audit</h3><p>A hash-chained log of every state-changing request. Signed traces; a re-chained forgery fails verification.</p></div>
-          <div className="tile"><div className="ico"><ShieldCheck size={22} /></div><h3>Containment</h3><p>Hardened containers, databases that reject anonymous access, secrets redacted before storage.</p></div>
-        </div>
-      </div></section>
-
-      <section className="sec" id="status"><div className="wrap reveal">
-        <div className="eyebrow">Status</div>
-        <h2>What is built, and what is next.</h2>
-        <div className="status">
-          <div><span className="tag done">built</span>Attack, oracle, signed traces, guard replay, benign regression, ablation, policy time machine</div>
-          <div><span className="tag done">built</span>Bitemporal graph, GraphRAG, 3D neural graph with run replay, hardened API, report engine</div>
-          <div><span className="tag todo">next</span>Bring-your-own-agent connectors: Anthropic wire format, MCP, plain HTTP agents</div>
-          <div><span className="tag todo">next</span>Automatic scenarios for arbitrary tool lists; live fork-from-a-step revive</div>
-          <div><span className="tag todo">next</span>MicroVM or gVisor sandbox for hostile agents; TLS on database ports</div>
-        </div>
-      </div></section>
+      {sections.map((s) => (
+        <section key={s.id} id={s.id} className="ps" aria-label={LABEL[s.id] ?? s.id}>
+          <div className="slide-in">
+            {s.kicker && <div className="kicker rv">{s.kicker}</div>}
+            {s.body}
+          </div>
+        </section>
+      ))}
 
       <footer><div className="wrap">
         <div className="big">Test the agent. Keep the proof.</div>
         <p>Made by David Porathur and Rishit Baitule. Agent harness forked from pi (MIT); bitemporal modelling follows utopia (Apache-2.0); detectors ported from TRIVEKTRA (GPLv3).</p>
         <p><Link href="/console" style={{ color: "var(--cyan)" }}>Open the console →</Link></p>
       </div></footer>
+
+      <button className="notes-fab" onClick={() => setNotes((v) => !v)} aria-pressed={notes}><StickyNote size={14} /> Speaker notes (N)</button>
+      {notes && <div className="notes-box" role="note"><b>Talking points</b>{curNotes}</div>}
     </div>
   );
 }

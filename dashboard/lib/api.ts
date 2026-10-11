@@ -359,3 +359,125 @@ export interface Narration {
   summary: string;
   steps: Record<string, Note>;
 }
+
+// ---- threat intelligence ----
+export interface IntelItem {
+  id: string;
+  source: string;
+  kind: string; // advisory | cve | paper
+  title: string;
+  summary: string;
+  url?: string;
+  published?: string;
+  modified?: string;
+  severity?: string;
+  cvss?: number;
+  epss?: number;
+  kev?: boolean;
+  aliases?: string[];
+  affects?: string[];
+  tags?: string[];
+  taxon?: string[];
+}
+export interface IntelHit extends IntelItem {
+  score?: number;
+  via: "meaning" | "text";
+}
+export interface IntelSource {
+  name: string;
+  title: string;
+  role: string;
+  url: string;
+  description: string;
+  key_env?: string;
+  key_set: boolean;
+  items: number;
+  last_sync?: string;
+  error?: string;
+}
+export interface IntelFacets {
+  total: number;
+  kinds: Record<string, number>;
+  severity: Record<string, number>;
+  techniques: Record<string, number>;
+  kev: number;
+  taxonomy_version: string;
+}
+export interface IntelSources {
+  sources: IntelSource[];
+  facets: IntelFacets;
+}
+export interface IntelSearch {
+  query: string;
+  semantic: boolean;
+  hits: IntelHit[];
+}
+
+export async function put<T>(path: string, body: unknown): Promise<T> {
+  const r = await fetch(API + path, { method: "PUT", headers: headers({ "content-type": "application/json" }), body: JSON.stringify(body) });
+  await check(r, path);
+  return r.json() as Promise<T>;
+}
+
+export async function del<T>(path: string): Promise<T> {
+  const r = await fetch(API + path, { method: "DELETE", headers: headers() });
+  await check(r, path);
+  return r.json() as Promise<T>;
+}
+
+/** Fetches a file with the token (an <a href> or <iframe src> cannot send one). */
+export async function getBlob(path: string): Promise<Blob> {
+  const r = await fetch(API + path, { cache: "no-store", headers: headers() });
+  await check(r, path);
+  return r.blob();
+}
+
+/** Saves a blob as a file through a temporary link. */
+export function saveBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+// ---- reports ----
+export interface RunRow { id: string; traces: number; scenario: string; target: string; model: string; valid_runs: number; exploits: number; asr: number; rating: string; simulated: boolean; findings: number; reports: number; modified: string; error?: string }
+export interface ReportMeta { id: string; run: string; format: string; skeleton: string; title?: string; classification?: string; bytes: number; sha256: string; created_at: string; created_by: string; file: string }
+export interface ReportRuns { runs: RunRow[]; skeletons: string[]; formats: string[]; pdf: boolean; defaults: Settings }
+export interface Settings {
+  scenario: string; seeds: string; target: string; isolation: string; guard_mode: string; offline: boolean; repeats: number; budget: number;
+  report_skeleton: string; report_title: string; classification: string; refresh_sec: number; intel_sync_hours: number; disabled_defenses: string[]; updated_by?: string; updated_at?: string;
+}
+export interface CatalogItem { path: string; name: string; description?: string; kind?: string; sandbox?: boolean }
+export interface Catalog { scenarios: CatalogItem[]; seeds: CatalogItem[]; targets: CatalogItem[] }
+// The parts of the full report the page shows. Everything else in the payload is ignored.
+export interface ReportData {
+  title: string; scenario: string; target: string; model: string; simulated: boolean; generated_at: string;
+  attack_runs: number; valid_runs: number; errored_runs: number; control_runs: number;
+  headline: string; risk_rating: string; risk_basis: string; has_findings: boolean;
+  doc: { report_id: string; version: string; classification: string; date: string; status: string; authors: string };
+  scope: { description: string; agent_tools: string[]; surfaces: string[]; objectives: { id: string; description: string; severity: string }[]; sandboxed: boolean; target_kind: string; techniques_tried: string[] };
+  techniques: { technique: string; runs?: number; wins?: number; rate?: number }[];
+  objectives: { objective: string; severity: string; attack: string; control: string }[];
+  findings: { id: string; title: string; severity: string; technique: string; surface: string; reliability: number; reliability_text: string; evidence: string; runs: number; successes: number; stopped_by?: string[]; guarded_replays: number; guarded_replays_still_succeeding: number; owasp_agentic: string[]; intel?: { id: string; title: string; severity?: string; kev?: boolean; url?: string; why: string }[]; taxonomy?: string[] }[];
+  defense_summary?: { replayed: number; blocked: number; still_succeeding: number; benign_guard_off: string; benign_guard_on: string; text?: string };
+  recommendations: { priority: number; action: string; rationale: string; evidence: string }[];
+  limitations: string[];
+  integrity: { traces: number; signed: number; verified: number; unsigned: number; failed_verification: number; report_digest_sha256: string };
+  threat_context?: { note: string; refs: { id: string; source: string; title: string; severity?: string; kev?: boolean }[] };
+}
+
+// ---- the shared security evaluation (identical to `avhsol summary`) ----
+export interface Rate { k: number; n: number; p: number; low: number; high: number }
+export interface Evaluation {
+  rating: string; basis: string; simulated: boolean; valid_runs: number; errored_runs: number; control_runs: number;
+  exploit: Rate; severity: Record<string, number>; max_stages: number; multi_stage_findings: number;
+  objectives: { objective: string; severity: string; attack: Rate; control: Rate; verdict: string; p?: number }[];
+  techniques: { technique: string; rate: Rate }[];
+  defense?: { replayed: number; blocked: number; still_succeeding: number; benign_guard_off: string; benign_guard_on: string; verdict: string; contribution?: { defense: string; success_without_it: Rate; matters: boolean }[] };
+  does_not_show: string[];
+}

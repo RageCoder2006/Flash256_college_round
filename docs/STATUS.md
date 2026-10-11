@@ -1,5 +1,7 @@
 # Status
 
+The seven key features and how far each goes: [KEY-FEATURES.md](KEY-FEATURES.md).
+
 ## Implemented
 
 **Testing pipeline** — attack seeds and an adaptive hunter (bandit, model-written payloads, reliability re-runs, minimisation); deterministic oracles and a canary
@@ -9,7 +11,7 @@ redacted to fingerprints; report engine (HTML/PDF/MD/JSON/SARIF) driven by JSON 
 **Graph** — bitemporal Neo4j graph + Qdrant vectors, GraphRAG with citations, spreading activation, per-step LLM/rule narration for replays, hardened role-based API
 with a hash-chained audit log.
 
-**Dashboard** — dark redesign, landing page with a full architecture diagram, console, 3D neural graph with command-centre replay, node inspector, chat dock,
+**Dashboard** — threat-intel page (data sources, search, knowledge graph); dark redesign, landing page with a full architecture diagram, console, 3D neural graph with command-centre replay, node inspector, chat dock,
 hideable sidebar. (Frozen during the latest round.)
 
 **Latest round (see [PLAN-intel-and-core.md](PLAN-intel-and-core.md))**
@@ -33,6 +35,18 @@ hideable sidebar. (Frozen during the latest round.)
 * **Live fork** against the real model and pi: after fixing a bug it exposed (recorded absolute workspace paths pointed at a deleted directory; the cassette now
   rebases them to the fork's workspace), the replayed README read succeeds and the live model continues. One fork with the guard enforcing at step 3 did not
   reproduce the printed secret; that is one sample.
+
+## Control-centre round (dashboard, monitoring, TUI, multi-stage, evaluation)
+
+| Built | Verified |
+|---|---|
+| `internal/sysmon` (host, process tree, sandbox usage, docker stats), `/api/status`, history, SSE stream, `/metrics`, `/api/about` | fixture-parser tests, live read on this machine; the Status page rendered with real data; Prometheus target UP; Grafana datasource and dashboard provisioned and queried |
+| Dashboard: **Status** (landing route), **Reports** (summary with evaluation, generate, preview, download, zip), **Settings** (defaults, guard defenses, model test, sync, graph reset, role-aware), **About** (key-feature matrix, architecture, licences) | headless-browser screenshots for admin/operator/viewer; report generation, PDF preview, download and zip exercised end to end |
+| Run control: `POST /api/runs/{id}/cancel`, catalog-validated launch parameters (`/api/catalog`) | cancel verified on a running process group only partially (the test run finished before the cancel; unit tests cover the parts) |
+| Optional Prometheus + Grafana (`scripts/stack.sh up --observability`) | stack started, hardened (non-root, caps dropped, read-only, loopback only) |
+| `internal/eval` and `avhsol summary`: one evaluation with Wilson intervals and control comparison | unit tests including a hand-checked Fisher p-value (0.036 matches the real run) |
+| Multi-stage attacks: fresh-session follow-up, `multi_stage` oracle, stages in path/report/graph, `inbox-memory` scenario | oracle and breach unit tests; offline pipeline run; see the real-model result below |
+| Terminal UI (`avhsol` / `avhsol tui`), Bubble Tea | unit tests; driven through a pseudo-terminal: menus, forms, audit, an offline campaign with live output and evaluation, traces, intel, Doctor, Status |
 
 ## Not verified / not built
 

@@ -219,7 +219,11 @@ func Build(o Options) (*Report, error) {
 		}
 		sort.Strings(asi)
 		f.ASI = asi
+		f.Stages, f.MultiStage = breach.Depth(f.Path)
 		f.Title = fmt.Sprintf("%s via %s leaks data (%s)", strings.ReplaceAll(f.Technique, "_", " "), f.Surface, strings.ReplaceAll(f.Objective, "_", " "))
+		if f.MultiStage {
+			f.Title = fmt.Sprintf("Multi-stage: %s via %s persists, then leaks data (%s)", strings.ReplaceAll(f.Technique, "_", " "), f.Surface, strings.ReplaceAll(f.Objective, "_", " "))
+		}
 		f.IntelSeed = rep.Attack.IntelRef
 		f.Payload, _ = redact.Text(rep.Attack.Payload, known)
 		f.HiddenChars = countHidden(rep.Attack.Payload)
@@ -400,6 +404,12 @@ func limitations(r *Report, sc *scenario.Scenario) []string {
 		l = append(l, "The agent ran in a gVisor container with no network; the only ports it could reach were tunnelled by the platform (the guard proxy and the canary server). gVisor reimplements the Linux kernel in user space, which narrows the host kernel attack surface a hostile agent can touch, but it is not a hardware virtual machine.")
 	case sc != nil && sc.Sandbox:
 		l = append(l, "Shell commands ran in a Landlock/seccomp sandbox that shares the host kernel; it is not a virtual machine.")
+	}
+	for _, f := range r.Findings {
+		if f.MultiStage {
+			l = append(l, "A multi-stage finding means a later, fresh agent session acted on content an earlier session left in long-term memory. It depends on the agent persisting that memory between sessions, as the tested agent does; an agent without persistent memory is not exposed to this path.")
+			break
+		}
 	}
 	if sc != nil && sc.Generated {
 		l = append(l, "The scenario was generated automatically from the agent's tool list (avhsol scengen). Its planted data, documents and benign tasks are generic, so results show how the agent handles those, not its real business data.")

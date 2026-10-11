@@ -281,3 +281,12 @@ func (w *World) memResult(k string, e MemoryEntry) Result {
 	}
 	return r
 }
+
+// NewSession starts a fresh agent context in the same world: files, mail and long-term memory stay (including which memory
+// entries are tainted), but the labels of untrusted content the previous session read are cleared, because the new agent has
+// not read them. A later call is only "caused by" untrusted content if the new session itself recalls it (for example from memory).
+func (w *World) NewSession() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.untrusted = nil
+}

@@ -133,3 +133,21 @@ func (q *Qdrant) Search(ctx context.Context, collection string, vector []float32
 func (q *Qdrant) DeleteCollection(ctx context.Context, name string) error {
 	return q.do(ctx, "DELETE", "/collections/"+name, nil, nil)
 }
+
+// Health reports whether Qdrant answers its readiness probe.
+func (q *Qdrant) Health(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", q.BaseURL+"/readyz", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("api-key", q.APIKey)
+	res, err := q.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode/100 != 2 {
+		return fmt.Errorf("qdrant not ready: HTTP %d", res.StatusCode)
+	}
+	return nil
+}

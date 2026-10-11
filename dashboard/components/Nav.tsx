@@ -1,13 +1,18 @@
 "use client";
-import { ChevronLeft, LayoutDashboard, ListTree, Network, Play } from "lucide-react";
+import { Activity, ChevronLeft, FileText, Info, LayoutDashboard, ListTree, Network, Play, Settings, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const LINKS = [
-  { href: "/console", label: "Verdict", icon: LayoutDashboard },
+  { href: "/console", label: "Status", icon: Activity },
+  { href: "/console/verdict", label: "Verdict", icon: LayoutDashboard },
   { href: "/console/graph", label: "Neural graph", icon: Network },
+  { href: "/console/intel", label: "Threat intel", icon: ShieldAlert },
   { href: "/console/traces", label: "Traces", icon: ListTree },
+  { href: "/console/reports", label: "Reports", icon: FileText },
   { href: "/console/run", label: "Run", icon: Play },
+  { href: "/console/settings", label: "Settings", icon: Settings },
+  { href: "/console/about", label: "About", icon: Info },
 ];
 
 export function Nav() {

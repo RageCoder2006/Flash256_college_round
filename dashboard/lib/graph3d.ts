@@ -59,6 +59,15 @@ export function nodeColor(n: SceneNode): string {
     case "tool": return COLORS.teal;
     case "secret": return COLORS.gold;
     case "defense": return COLORS.cyan;
+    case "intel": {
+      if (n.flag === "kev") return COLORS.breach;
+      const m = n.meta ?? {};
+      if (m.item_kind === "paper") return COLORS.teal;
+      return { critical: "#ff7a45", high: COLORS.amber, medium: COLORS.gold, low: COLORS.steel }[String(m.severity ?? "")] ?? COLORS.blue;
+    }
+    case "source": return COLORS.cyan;
+    case "taxon": return "#c9a8ff";
+    case "package": return COLORS.steel;
     case "user_turn": return "#aebce0";
     case "tool_call": return n.flag === "leak" ? COLORS.amber : COLORS.blue;
     case "tool_result": return n.flag === "untrusted" ? COLORS.breach : COLORS.cyan;
@@ -71,6 +80,10 @@ export function nodeColor(n: SceneNode): string {
 export function nodeSize(n: SceneNode): number {
   switch (n.kind) {
     case "episode": return 7;
+    case "source": return 7.5;
+    case "taxon": return 5;
+    case "package": return 3.6;
+    case "intel": return n.flag === "kev" ? 4.6 : 3.4;
     case "technique": return 6;
     case "defense": return 5.5;
     case "secret": return 5;
@@ -81,7 +94,7 @@ export function nodeSize(n: SceneNode): number {
   }
 }
 
-export const SHOW_LABEL = new Set(["episode", "technique", "defense", "secret"]);
+export const SHOW_LABEL = new Set(["episode", "technique", "defense", "secret", "source", "taxon"]);
 
 export function linkStyle(type: string): { color: string; width: number; particles: number } {
   switch (type) {
@@ -93,6 +106,12 @@ export function linkStyle(type: string): { color: string; width: number; particl
     case "PLANTED": case "PLANTED_IN": return { color: COLORS.amber, width: 0.9, particles: 0 };
     case "INSTANCE_OF": return { color: COLORS.violet, width: 0.9, particles: 0 };
     case "RETURNED": return { color: COLORS.cyan, width: 0.7, particles: 0 };
+    case "MOTIVATES": return { color: COLORS.violet, width: 0.9, particles: 1 };
+    case "MAPS_TO": return { color: "#c9a8ff", width: 0.9, particles: 0 };
+    case "AFFECTS": return { color: COLORS.steel, width: 0.7, particles: 0 };
+    case "FROM_SOURCE": return { color: COLORS.cyan, width: 0.5, particles: 0 };
+    case "ALIAS_OF": return { color: COLORS.gold, width: 1.1, particles: 2 };
+    case "INSPIRED_BY": return { color: COLORS.amber, width: 1.1, particles: 1 };
     case "NEXT": return { color: "#6f84b8", width: 0.5, particles: 0 };
     case "HAS_STEP": return { color: "#6f84b8", width: 0.4, particles: 0 };
     default: return { color: "#6f84b8", width: 0.6, particles: 0 };

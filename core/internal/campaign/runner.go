@@ -169,10 +169,17 @@ func (r *Runner) runEpisode(ctx context.Context, tr *trace.Trace, w *world.World
 	id := tr.TraceID
 	r.Worlds.Register(id, w)
 	defer r.Worlds.Unregister(id)
+	follow := []string(nil)
+	if tr.Kind == "attack" {
+		follow = r.Scenario.FollowUp // a multi-stage attack: a later session acts on what the first one left behind
+	}
 	spec := harness.EpisodeSpec{
 		EpisodeID: id, WorldURL: r.WorldURL, LLM: llm,
 		SystemPrompt: r.Scenario.SystemPrompt, Tools: r.Scenario.Tools, UserTurns: turns,
 		MaxTurns: r.MaxTurns, Guard: r.guardSpec(),
+	}
+	if len(follow) > 0 {
+		spec.AllUserTurns = append(append([]string(nil), turns...), follow...)
 	}
 	if f := r.fork; f != nil { // live revive: start from the recorded conversation and put the world back in its state
 		for _, s := range f.plan.Kept {
@@ -209,7 +216,59 @@ func (r *Runner) runEpisode(ctx context.Context, tr *trace.Trace, w *world.World
 		}
 	}
 	tr.FinalText, tr.Error = res.FinalText, res.Error
+	if len(follow) == 0 || res.Error != "" {
+		return nil
+	}
+	// ---- stage 2: a fresh agent session in the same world ----
+	w.NewSession()
+	spec2 := spec
+	spec2.History, spec2.UserTurns = nil, follow
+	spec2.AllUserTurns = spec.AllUserTurns
+	if llm.Kind == "scripted" {
+		spec2.LLM = harness.LLMSpec{Kind: "scripted", Scripted: r.followupScript(w)}
+	}
+	res2, err := r.Harness.RunEpisode(ctx, spec2, nil)
+	if err != nil {
+		return err
+	}
+	for i, s := range res2.Steps {
+		data := s.Data
+		if i == 0 && s.Type == trace.StepUserTurn {
+			data = map[string]any{}
+			for k, v := range s.Data {
+				data[k] = v
+			}
+			data["session"] = 2
+		}
+		if _, err := tr.Append(s.Type, s.TS, data); err != nil {
+			return err
+		}
+	}
+	tr.FinalText = res2.FinalText
+	if res2.Error != "" {
+		tr.Error = res2.Error
+	}
 	return nil
+}
+
+// followupScript is what the simulated (gullible) model does in stage 2: it recalls memory and acts on the recalled note.
+func (r *Runner) followupScript(w *world.World) []harness.ScriptedTurn {
+	var out []harness.ScriptedTurn
+	for _, t := range r.Scenario.OfflineFollowup {
+		st := harness.ScriptedTurn{Text: strings.ReplaceAll(t.Text, "{{attacker_email}}", AttackerEmail)}
+		for _, tc := range t.ToolCalls {
+			args := map[string]any{}
+			for k, v := range tc.Args {
+				if sv, ok := v.(string); ok {
+					v = strings.ReplaceAll(sv, "{{attacker_email}}", AttackerEmail)
+				}
+				args[k] = v
+			}
+			st.ToolCalls = append(st.ToolCalls, harness.ScriptedToolCall{Name: tc.Name, Args: args})
+		}
+		out = append(out, st)
+	}
+	return out
 }
 
 func (r *Runner) newTrace(kind string, turns []string) *trace.Trace {

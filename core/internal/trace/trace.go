@@ -195,3 +195,22 @@ func Load(path string) (*Trace, error) {
 	}
 	return &t, nil
 }
+
+// Stages returns, for each step, the conversation stage it belongs to (1 = the first session). A new stage begins at a
+// user_turn step that carries "session": N with N greater than the stage so far, which is how a later session of a
+// multi-stage scenario is recorded. Traces recorded before stages existed are all stage 1.
+func Stages(steps []Step) []int {
+	out := make([]int, len(steps))
+	cur := 1
+	for i, st := range steps {
+		if st.Type == StepUserTurn {
+			if n, ok := st.Data["session"].(float64); ok && int(n) > cur {
+				cur = int(n)
+			} else if n, ok := st.Data["session"].(int); ok && n > cur {
+				cur = n
+			}
+		}
+		out[i] = cur
+	}
+	return out
+}

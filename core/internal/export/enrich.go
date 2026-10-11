@@ -30,13 +30,20 @@ func timeline(tr *trace.Trace, known []string) []Event {
 		return nil
 	}
 	t0 := tr.Steps[0].TS
+	stages := trace.Stages(tr.Steps)
+	multi := stages[len(stages)-1] > 1
 	var out []Event
+	cur := 1
 	add := func(ts int64, typ, sum, flag string) {
 		clean, _ := redact.Text(sum, known)
+		if multi {
+			clean = fmt.Sprintf("[stage %d] %s", cur, clean)
+		}
 		out = append(out, Event{ts: ts, T: fmt.Sprintf("+%.1fs", float64(ts-t0)/1000), Type: typ, Summary: clip(clean, 170), Flag: flag})
 	}
-	for _, s := range tr.Steps {
+	for si, s := range tr.Steps {
 		d := s.Data
+		cur = stages[si]
 		str := func(k string) string { v, _ := d[k].(string); return v }
 		switch s.Type {
 		case trace.StepUserTurn:

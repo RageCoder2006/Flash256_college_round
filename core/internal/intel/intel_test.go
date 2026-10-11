@@ -297,3 +297,48 @@ func TestExtractPayloadPrefersTheFencedBlockAndMetaTalkIsRejected(t *testing.T) 
 		t.Fatal("overlong accepted")
 	}
 }
+
+func TestSourcesFacetsAndKnowledgeGraph(t *testing.T) {
+	st, _ := Open(t.TempDir())
+	tax := mustTax(t)
+	for _, it := range []Item{
+		{ID: "GHSA-1", Source: "ghsa", Kind: "advisory", Title: "Prompt injection in langchain agent", Summary: "ignore previous instructions", Aliases: []string{"CVE-2025-1111"}, Affects: []string{"PyPI:langchain"}, Severity: "high"},
+		{ID: "CVE-2025-1111", Source: "nvd", Kind: "cve", Title: "Prompt injection in langchain agent", Summary: "ignore previous instructions", KEV: true},
+		{ID: "2501.1", Source: "feed:arxiv", Kind: "paper", Title: "Agent security", Summary: "indirect prompt injection in LLM agents"},
+	} {
+		tax.Annotate(&it)
+		st.Upsert([]Item{it})
+	}
+	var feeds, kevInfo SourceInfo
+	for _, s := range st.Sources() {
+		if s.Name == "feeds" {
+			feeds = s
+		}
+		if s.Name == "kev" {
+			kevInfo = s
+		}
+	}
+	if feeds.Items != 1 || kevInfo.Items != 1 {
+		t.Fatalf("source counts wrong: feeds=%d kev=%d", feeds.Items, kevInfo.Items)
+	}
+	if f := st.Facets(); f.Total != 3 || f.KEV != 1 || f.Techniques["instruction_override"] != 3 {
+		t.Fatalf("%+v", f)
+	}
+	g := BuildGraph(st, Filter{}, 10)
+	kinds, edges := map[string]int{}, map[string]int{}
+	for _, n := range g.Nodes {
+		kinds[n.Kind]++
+	}
+	for _, e := range g.Edges {
+		edges[e.Type]++
+	}
+	if kinds["intel"] != 3 || kinds["source"] != 3 || kinds["technique"] == 0 || kinds["taxon"] == 0 || kinds["package"] != 1 {
+		t.Fatalf("nodes %v", kinds)
+	}
+	if edges["ALIAS_OF"] != 1 || edges["MAPS_TO"] == 0 || edges["AFFECTS"] != 1 || edges["FROM_SOURCE"] != 3 {
+		t.Fatalf("edges %v", edges)
+	}
+	if small := BuildGraph(st, Filter{KEV: true}, 10); small.Shown != 1 || small.Total != 1 {
+		t.Fatalf("filter ignored: %+v", small)
+	}
+}

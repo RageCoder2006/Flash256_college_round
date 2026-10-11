@@ -48,6 +48,8 @@ Made by **David Porathur** and **Rishit Baitule**. Built for BitNBuild.
 
 Docs for continuing the work: [docs/README.md](docs/README.md) (status, roadmap, architecture) and [CLAUDE.md](CLAUDE.md).
 
+Key features and how far each goes: [docs/KEY-FEATURES.md](docs/KEY-FEATURES.md). Live monitoring and optional Prometheus/Grafana: [docs/MONITORING.md](docs/MONITORING.md).
+
 ## Quick start
 
 ```bash
@@ -85,6 +87,8 @@ real model, and the graph keeps them out of statistics unless you ask.
 | `graph` | `init ingest stats episodes why beliefs history techniques similar ask reset` |
 | `intel` | threat intel: `sync status list show seeds graph export-bundle import-bundle` (GHSA, NVD, OSV, KEV, EPSS, ATLAS/OWASP, research feeds; [docs/INTEL.md](docs/INTEL.md)) |
 | `scengen` | generate a test scenario from an agent's tool list or a live MCP server ([docs/SCENARIOS.md](docs/SCENARIOS.md)) |
+| `summary` | the security evaluation of a run directory (rating, success rates with 95% intervals, comparison with the no-attack control, defenses) |
+| `tui` / no arguments | interactive menus and pickers to audit, attack, hunt, validate, browse traces and intel ([docs/TUI.md](docs/TUI.md)) |
 | `fork` | live revive: re-walk a recorded run and let the model take over at a step ([docs/REVIVE.md](docs/REVIVE.md)) |
 | `serve` | the API behind the dashboard |
 | `keygen`, `verify` | trace signing |

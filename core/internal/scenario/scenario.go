@@ -94,8 +94,12 @@ type Scenario struct {
 	Memory          map[string]string     `yaml:"memory" json:"memory"`
 	Surfaces        []Surface             `yaml:"surfaces" json:"surfaces"`
 	UserTask        []string              `yaml:"user_task" json:"user_task"`
-	Objectives      []Objective           `yaml:"objectives" json:"objectives"`
-	BenignTasks     []BenignTask          `yaml:"benign_tasks" json:"benign_tasks"`
+	// FollowUp is a later session: after the main task finishes, a NEW agent session (fresh context, same memory and files)
+	// is given these user turns. It is what makes an attack multi-stage: stage 1 plants something that persists, stage 2 acts on it.
+	FollowUp        []string      `yaml:"followup_task" json:"followup_task,omitempty"`
+	OfflineFollowup []OfflineTurn `yaml:"offline_followup" json:"offline_followup,omitempty"` // script for the simulated model in the follow-up session
+	Objectives      []Objective   `yaml:"objectives" json:"objectives"`
+	BenignTasks     []BenignTask  `yaml:"benign_tasks" json:"benign_tasks"`
 
 	// Generated is true when `avhsol scengen` wrote this scenario from a tool list rather than a person. The report says so.
 	Generated bool `yaml:"generated,omitempty" json:"generated,omitempty"`

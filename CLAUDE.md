@@ -17,6 +17,7 @@ trace → replay under the Rust guard → benign-task regression → defense abl
 | `dashboard/` | Next.js 16 / React 19. `/` landing, `/console/*` app. `lib/graph3d.ts`, `components/graph3d/NeuralGraph.tsx` |
 | `scenarios/`, `seeds/`, `targets/` | Target definitions, attack seeds, closed-box CLI agent specs |
 | `deploy/stack/` | docker compose for Neo4j + Qdrant; `.env` (mode 600, gitignored) holds DB creds and API tokens |
+| `core/internal/{sysmon,eval,tui}` | host/sandbox monitoring, the shared security evaluation, the Bubble Tea terminal UI |
 | `docs/` | Handover docs: STATUS, ROADMAP, INTEL, CONNECTORS, SANDBOX, REVIVE, SCENARIOS, REPORTS, plus the approved plan |
 
 ## Commands
@@ -42,6 +43,10 @@ avhsol scengen -tools t.json # scenario from a tool list; avhsol fork -trace ID 
 
 * Threat-intel text is third-party data: never feed it to a model unquoted, never let it change a risk rating. Intel-derived seeds carry `ref`; they are ideas, not findings.
 * Only `avhsol intel sync` (and the admin `POST /api/intel/sync`) may use the network for intel; nothing fetches during a run.
+
+* **Never run test campaigns into a real run directory** (`out-coding-live`, `out-intel-live`): they mix simulated traces into real results and overwrite `report.json`. Use a scratch `-out`.
+* The TUI libraries are pinned for Go 1.22 (bubbletea v1.1.0, lipgloss v1.0.0, bubbles v0.20.0); do not let `go get -u` raise them.
+* A multi-stage scenario's `followup_task` runs in a fresh agent session; `World.NewSession` clears context taint but keeps memory.
 
 ## Gotchas
 * Reasoning model: send `chat_template_kwargs.enable_thinking=false` for attacker/analyst/ask calls. Context is 8192 tokens.

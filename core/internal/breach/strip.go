@@ -9,7 +9,8 @@ import (
 
 // Node is one link in a "breach line": the chain of events from planted payload to outcome.
 type Node struct {
-	Kind    string `json:"kind"` // surface | ingest | tool | egress | outcome
+	Kind    string `json:"kind"`            // surface | ingest | tool | egress | memory | recall | outcome
+	Stage   int    `json:"stage,omitempty"` // 1-based conversation stage (later sessions of a multi-stage attack are 2, 3, ...)
 	Label   string `json:"label"`
 	Blocked bool   `json:"blocked,omitempty"`
 	Rule    string `json:"rule,omitempty"`
@@ -42,13 +43,17 @@ func Strip(tr *trace.Trace) []Node {
 		nodes = append(nodes, Node{Kind: "surface", Label: "payload in " + tr.Attack.Surface})
 	}
 	steps := tr.Steps
+	stages := trace.Stages(steps)
 	untrustedSeen := false
 	for i, st := range steps {
 		switch st.Type {
 		case trace.StepToolCall:
 			name, _ := st.Data["name"].(string)
 			args, _ := st.Data["args"].(map[string]any)
-			n := Node{Kind: "tool", Label: argLabel(name, args)}
+			n := Node{Kind: "tool", Label: argLabel(name, args), Stage: stages[i]}
+			if name == "memory_write" && untrustedSeen {
+				n.Kind = "memory" // persisted after untrusted content: the stage-1 foothold
+			}
 			if egressNames[name] {
 				n.Kind = "egress"
 			}
@@ -71,7 +76,11 @@ func Strip(tr *trace.Trace) []Node {
 				}
 				if steps[j].Type == trace.StepToolResult {
 					if src, _ := steps[j].Data["source"].(string); strings.HasPrefix(src, "retrieved:") || strings.HasPrefix(src, "web:") || strings.HasPrefix(src, "memory:") {
-						n.Kind = "ingest"
+						if name == "memory_read" || strings.HasPrefix(src, "memory:") {
+							n.Kind = "recall" // a tainted memory entry came back into context
+						} else {
+							n.Kind = "ingest"
+						}
 						untrustedSeen = true
 					}
 					break
@@ -83,7 +92,7 @@ func Strip(tr *trace.Trace) []Node {
 			nodes = append(nodes, n)
 		}
 	}
-	out := Node{Kind: "outcome"}
+	out := Node{Kind: "outcome", Stage: lastStage(nodes)}
 	if tr.Kind == "benign" {
 		out.Label = map[bool]string{true: "task completed", false: "task failed"}[tr.Success]
 	} else if tr.Success {
@@ -93,4 +102,37 @@ func Strip(tr *trace.Trace) []Node {
 	}
 	nodes = append(nodes, out)
 	return nodes
+}
+
+func lastStage(nodes []Node) int {
+	st := 1
+	for _, n := range nodes {
+		if n.Stage > st {
+			st = n.Stage
+		}
+	}
+	return st
+}
+
+// Depth reports how many conversation stages a breach line spans and whether it is a genuine multi-stage attack: a memory
+// foothold in one stage, recalled and acted on (egress) in a later one.
+func Depth(nodes []Node) (stages int, multi bool) {
+	stages = 1
+	memStage := 0
+	for _, n := range nodes {
+		if n.Stage > stages {
+			stages = n.Stage
+		}
+		switch n.Kind {
+		case "memory":
+			if memStage == 0 {
+				memStage = n.Stage
+			}
+		case "egress":
+			if memStage > 0 && n.Stage > memStage {
+				multi = true
+			}
+		}
+	}
+	return stages, multi
 }

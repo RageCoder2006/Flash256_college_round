@@ -52,3 +52,45 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+
+  # ---- optional observability: scripts/stack.sh up --observability ----------------------------------------------------
+  # Both run on the host network so they can reach the loopback-only API, and both bind to 127.0.0.1 only.
+  prometheus:
+    <<: *hardening
+    profiles: [observability]
+    image: prom/prometheus@sha256:565ee86501224ebbb98fc10b332fa54440b100469924003359edf49cbce374bd
+    network_mode: host
+    read_only: true
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.listen-address=127.0.0.1:9090
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - ./data/prometheus:/prometheus
+
+  grafana:
+    <<: *hardening
+    profiles: [observability]
+    image: grafana/grafana@sha256:fa801ab6e1ae035135309580891e09f7eb94d1abdbd2106bdc288030b028158c
+    network_mode: host
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      GF_SERVER_HTTP_ADDR: 127.0.0.1
+      GF_SERVER_HTTP_PORT: "3001"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?run scripts/stack.sh up --observability}"
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/avhsol.json
+      GF_PATHS_DATA: /var/lib/grafana/data-store
+      GF_PATHS_PLUGINS: /var/lib/grafana/data-store/plugins
+      GF_PATHS_LOGS: /tmp/grafana-logs
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./data/grafana:/var/lib/grafana/data-store

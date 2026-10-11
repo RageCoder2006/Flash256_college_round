@@ -51,10 +51,12 @@ func usage() {
 	fmt.Fprintln(os.Stderr, brand.Banner()+"\n"+brand.Credits()+"\n\n"+`usage: avhsol <command> [flags]
 
 commands:
+  tui        interactive menus: pick a scenario, agent and options, then audit, attack, hunt or validate (also: run avhsol with no arguments)
   audit      static permission audit of a scenario
   campaign   run seed attacks (and optionally the benign regression suite)
   policy-test  replay recorded traces through a policy: what it would have stopped, what it would break
   intel      threat intel: sync GHSA/NVD/OSV/KEV/EPSS/research into a local cache, generate seeds, offline bundles
+  summary    the security evaluation of a run directory: rating, success rates with intervals, control comparison, defenses
   fork       live revive: re-walk a recorded run and let the model take over at a chosen step (guard/edits optional)
   netfwd     (internal) port forwarder started inside gVisor containers
   scengen    generate a test scenario from an agent's tool list (JSON file or live MCP server)
@@ -77,6 +79,13 @@ run "avhsol <command> -h" for flags.`)
 func main() {
 	legacyEnv()
 	if len(os.Args) < 2 {
+		if isTerminal() { // no command given on a terminal: open the menu
+			if err := cmdTUI(nil); err != nil {
+				fmt.Fprintln(os.Stderr, "error:", err)
+				os.Exit(1)
+			}
+			return
+		}
 		usage()
 	}
 	var err error
@@ -91,6 +100,10 @@ func main() {
 		err = cmdGraph(os.Args[2:])
 	case "intel":
 		err = cmdIntel(os.Args[2:])
+	case "tui", "menu":
+		err = cmdTUI(os.Args[2:])
+	case "summary":
+		err = cmdSummary(os.Args[2:])
 	case "fork":
 		err = cmdFork(os.Args[2:])
 	case "netfwd":
@@ -393,6 +406,7 @@ func writeReport(outDir, name string, v any) error {
 		return err
 	}
 	fmt.Printf("report: %s\n", p)
+	printEvaluation(outDir)
 	return nil
 }
 

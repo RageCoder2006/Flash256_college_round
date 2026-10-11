@@ -151,14 +151,17 @@ func (s *Store) IngestTrace(ctx context.Context, tr *trace.Trace, sc *scenario.S
 	callStep := map[string]string{} // tool_call_id -> step id
 	var lastIngest string
 	var texts []vecItem
-	for _, st := range tr.Steps {
+	stages := trace.Stages(tr.Steps)
+	memWrite := map[string]string{} // memory key -> the step that wrote it
+	var recalls []any
+	for si, st := range tr.Steps {
 		id := fmt.Sprintf("%s#%d", tr.TraceID, st.Seq)
 		label, ok := stepLabel[st.Type]
 		if !ok {
 			label = "Step"
 		}
 		d := st.Data
-		props := map[string]any{"ep": tr.TraceID, "seq": st.Seq, "type": st.Type, "hash": st.Hash}
+		props := map[string]any{"ep": tr.TraceID, "seq": st.Seq, "type": st.Type, "hash": st.Hash, "stage": stages[si]}
 		var embedText string
 		switch st.Type {
 		case trace.StepUserTurn:
@@ -174,6 +177,18 @@ func (s *Store) IngestTrace(ctx context.Context, tr *trace.Trace, sc *scenario.S
 			props["name"], props["args"], props["call_id"] = name, args, str(d, "id")
 			callStep[str(d, "id")] = id
 			invokes = append(invokes, map[string]any{"id": id, "tool": name})
+			if m, ok := d["args"].(map[string]any); ok {
+				if key := str(m, "key"); key != "" {
+					switch name {
+					case "memory_write":
+						memWrite[key] = id
+					case "memory_read":
+						if w, ok := memWrite[key]; ok { // a later read of a key written earlier: the recall that makes an attack multi-stage
+							recalls = append(recalls, map[string]any{"read": id, "write": w})
+						}
+					}
+				}
+			}
 			if m, ok := d["args"].(map[string]any); ok {
 				for _, k := range []string{"doc_id", "path", "url"} {
 					if v := str(m, k); v != "" {
@@ -253,6 +268,7 @@ func (s *Store) IngestTrace(ctx context.Context, tr *trace.Trace, sc *scenario.S
 	add(`UNWIND $rows AS r MATCH (a:Step {id:r.a}),(b:Step {id:r.b}) MERGE (a)-[:NEXT]->(b)`, nextPairs)
 	add(`UNWIND $rows AS r MATCH (c:Step {id:r.id}) MERGE (t:Tool {id:r.tool}) ON CREATE SET t.name=r.tool, t.rec_from=$now MERGE (c)-[:INVOKES]->(t)`, invokes)
 	add(`UNWIND $rows AS r MATCH (c:Step {id:r.call}),(x:Step {id:r.result}) MERGE (c)-[:RETURNED]->(x)`, returned)
+	add(`UNWIND $rows AS r MATCH (a:Step {id:r.read}),(b:Step {id:r.write}) MERGE (a)-[:RECALLS]->(b)`, recalls)
 	add(`UNWIND $rows AS r MATCH (x:Step {id:r.id}) MERGE (res:Resource {id:r.res}) ON CREATE SET res.name=split(r.res,'/')[-1], res.scenario=$sc, res.rec_from=$now MERGE (x)-[:READ {source:r.src}]->(res)`, resRead)
 	add(`UNWIND $rows AS r MATCH (c:Step {id:r.id}) MERGE (res:Resource {id:r.res}) ON CREATE SET res.name=split(r.res,'/')[-1], res.scenario=$sc, res.rec_from=$now MERGE (c)-[:ACCESSED {via:r.kind}]->(res)`, accessed)
 	add(`UNWIND $rows AS r MATCH (c:Step {id:r.id}),(i:Step {id:r.via}) MERGE (c)-[:TAINTED_BY]->(i)`, tainted)

@@ -29,7 +29,7 @@ avhsol intel export-bundle -o b.json     # signed (Ed25519) bundle for an air-ga
 avhsol intel import-bundle b.json        # verifies digest + signature; refuses unsigned unless -allow-unsigned
 ```
 
-API: `GET /api/intel/status`, `GET /api/intel/items` (viewer), `POST /api/intel/sync` (admin, audited, one at a time),
+API: `GET /api/intel/status`, `/sources` (catalog + counts + facets), `/items`, `/search` (semantic + text), `/graph` (knowledge graph) (all viewer), `POST /api/intel/sync` (admin, audited, one at a time),
 `GET /api/graph/overview?intel=1` adds the intel layer, `GET /api/graph/*` answers can cite intel.
 
 ## How it is used

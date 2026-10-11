@@ -16,16 +16,19 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/41vi4p/avhsol/core/internal/audit"
 	"github.com/41vi4p/avhsol/core/internal/breach"
+	"github.com/41vi4p/avhsol/core/internal/eval"
 	"github.com/41vi4p/avhsol/core/internal/export"
 	"github.com/41vi4p/avhsol/core/internal/graph"
 	"github.com/41vi4p/avhsol/core/internal/guard"
 	"github.com/41vi4p/avhsol/core/internal/llm"
 	"github.com/41vi4p/avhsol/core/internal/scenario"
 	"github.com/41vi4p/avhsol/core/internal/sign"
+	"github.com/41vi4p/avhsol/core/internal/sysmon"
 	"github.com/41vi4p/avhsol/core/internal/trace"
 )
 
@@ -52,9 +55,17 @@ type Server struct {
 	mu   sync.Mutex
 	runs map[string]*Run
 	cur  string
+
+	monOnce sync.Once
+	mon     *sysmon.Sampler
+	hc      healthCache
+	set     *settingsStore
+	started time.Time
 }
 
-func New(cfg Config) *Server { return &Server{cfg: cfg, runs: map[string]*Run{}} }
+func New(cfg Config) *Server {
+	return &Server{cfg: cfg, runs: map[string]*Run{}, set: newSettingsStore(filepath.Join(cfg.OutDir, "settings.json")), started: time.Now()}
+}
 
 type ctxKey struct{}
 
@@ -156,6 +167,10 @@ func (s *Server) Handler() http.Handler {
 	})
 	s.graphRoutes(mux)
 	s.intelRoutes(mux)
+	s.statusRoutes(mux)
+	s.reportRoutes(mux)
+	s.settingsRoutes(mux)
+	s.sampler() // start the host sampler so the Status page has history on first load
 	return secure(cors(mux))
 }
 
@@ -230,6 +245,7 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 		"validation":   readJSONFile(filepath.Join(s.cfg.OutDir, "validation.json")),
 		"campaign":     readJSONFile(filepath.Join(s.cfg.OutDir, "report.json")),
 		"hunt":         readJSONFile(filepath.Join(s.cfg.OutDir, "hunt.json")),
+		"evaluation":   s.evaluation(),
 		"trace_count":  len(trs),
 		"scenario":     s.cfg.ScenarioPath,
 		"default_offl": s.cfg.Offline,
@@ -383,12 +399,15 @@ func (s *Server) guardMode(w http.ResponseWriter, r *http.Request) {
 // ---- run manager ----
 
 type Run struct {
-	ID      string    `json:"id"`
-	Kind    string    `json:"kind"`
-	Status  string    `json:"status"` // running | done | failed
-	Started time.Time `json:"started_at"`
-	mu      sync.Mutex
-	lines   []string
+	ID       string     `json:"id"`
+	Kind     string     `json:"kind"`
+	Status   string     `json:"status"` // running | done | failed
+	Started  time.Time  `json:"started_at"`
+	Ended    *time.Time `json:"ended_at,omitempty"`
+	Canceled bool       `json:"canceled,omitempty"`
+	mu       sync.Mutex
+	lines    []string
+	cmd      *exec.Cmd
 }
 
 func (r *Run) add(l string) {
@@ -415,6 +434,11 @@ type startReq struct {
 	VsDefense  bool   `json:"vs_defense"`
 	GuardMode  string `json:"guard"`
 	Regression bool   `json:"regress"`
+	Scenario   string `json:"scenario"`  // optional: a catalogued scenario file
+	Seeds      string `json:"seeds"`     // optional: a catalogued seed file
+	Target     string `json:"target"`    // optional: a catalogued target file
+	Isolation  string `json:"isolation"` // optional: landlock | gvisor
+	Repeats    int    `json:"repeats"`
 	Trace      string `json:"trace"` // fork: the recorded trace to fork
 	At         int    `json:"at"`    // fork: the step to fork at
 }
@@ -425,14 +449,39 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
-	args := []string{req.Kind, "-scenario", s.cfg.ScenarioPath, "-out", s.cfg.OutDir}
-	if s.cfg.SeedsPath != "" {
-		args = append(args, "-seeds", s.cfg.SeedsPath)
+	set := s.set.get(s.cfg)
+	pick := func(kind, asked, def string) (string, bool) {
+		if asked == "" {
+			return def, true
+		}
+		return s.inCatalog(kind, asked)
+	}
+	scn, ok1 := pick("scenarios", req.Scenario, set.Scenario)
+	seeds, ok2 := pick("seeds", req.Seeds, set.Seeds)
+	tgt, ok3 := pick("targets", req.Target, set.Target)
+	if !ok1 || !ok2 || !ok3 {
+		http.Error(w, "scenario, seeds and target must be files listed by /api/catalog", http.StatusBadRequest)
+		return
+	}
+	iso := set.Isolation
+	if req.Isolation != "" {
+		if req.Isolation != "landlock" && req.Isolation != "gvisor" {
+			http.Error(w, "isolation must be landlock or gvisor", http.StatusBadRequest)
+			return
+		}
+		iso = req.Isolation
+	}
+	args := []string{req.Kind, "-scenario", scn, "-out", s.cfg.OutDir}
+	if seeds != "" {
+		args = append(args, "-seeds", seeds)
+	}
+	if tgt != "" && req.Kind != "audit" {
+		args = append(args, "-target", tgt, "-isolation", iso)
 	}
 	if s.cfg.SandboxBin != "" {
 		args = append(args, "-sandbox", s.cfg.SandboxBin)
 	}
-	offline := s.cfg.Offline
+	offline := set.Offline
 	if req.Offline != nil {
 		offline = *req.Offline
 	}
@@ -441,6 +490,11 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.cfg.GuardURL != "" {
 		args = append(args, "-guard-url", s.cfg.GuardURL)
+	}
+	if rp := req.Repeats; rp > 0 && rp <= 20 && req.Kind == "campaign" {
+		args = append(args, "-repeats", fmt.Sprint(rp))
+	} else if req.Kind == "campaign" && set.Repeats > 1 {
+		args = append(args, "-repeats", fmt.Sprint(set.Repeats))
 	}
 	switch req.Kind {
 	case "campaign":
@@ -498,11 +552,15 @@ func (s *Server) exec(run *Run, args []string) {
 		return
 	}
 	cmd.Stderr = cmd.Stdout
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // so a cancel reaches the agent processes the run started
 	if err := cmd.Start(); err != nil {
 		run.add("error: " + err.Error())
 		run.Status = "failed"
 		return
 	}
+	run.mu.Lock()
+	run.cmd = cmd
+	run.mu.Unlock()
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 1<<20), 8<<20)
 	for sc.Scan() {
@@ -513,8 +571,13 @@ func (s *Server) exec(run *Run, args []string) {
 		run.add("exit: " + err.Error())
 		status = "failed"
 	}
+	now := time.Now()
 	run.mu.Lock()
+	if run.Canceled {
+		status = "canceled"
+	}
 	run.Status = status
+	run.Ended = &now
 	run.mu.Unlock()
 }
 
@@ -580,7 +643,16 @@ func (s *Server) reportHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown skeleton; use one of: "+strings.Join(export.BuiltinSkeletons(), ", "), http.StatusBadRequest)
 		return
 	}
-	o := export.Options{Dir: s.cfg.OutDir, ScenarioDir: filepath.Dir(s.cfg.ScenarioPath), Scenario: q.Get("scenario"), Title: q.Get("title"), Classification: q.Get("classification")}
+	dir := s.cfg.OutDir
+	if run := q.Get("run"); run != "" {
+		d, ok := s.resolveRun(run)
+		if !ok {
+			http.Error(w, "unknown run", http.StatusNotFound)
+			return
+		}
+		dir = d
+	}
+	o := export.Options{Dir: dir, ScenarioDir: filepath.Dir(s.cfg.ScenarioPath), Scenario: q.Get("scenario"), Title: q.Get("title"), Classification: q.Get("classification")}
 	if len(o.Title) > 120 || len(o.Classification) > 40 {
 		http.Error(w, "title or classification too long", http.StatusBadRequest)
 		return
@@ -601,4 +673,13 @@ func (s *Server) reportHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Content-Disposition", `attachment; filename="avhsol-report.`+ext+`"`)
 	_, _ = w.Write(body)
+}
+
+// evaluation is the shared security evaluation of the API's own output directory (nil when there is nothing to evaluate).
+func (s *Server) evaluation() any {
+	rep, err := export.Build(s.exportOptions(s.cfg.OutDir, "", "", ""))
+	if err != nil {
+		return nil
+	}
+	return eval.Summarize(rep)
 }

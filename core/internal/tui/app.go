@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/41vi4p/avhsol/core/internal/home"
 	"os"
 	"path/filepath"
 	"sort"
@@ -49,6 +50,7 @@ const (
 type menuItem struct{ title, desc, action string }
 
 var homeMenu = []menuItem{
+	{"Audit a codebase", "Point at an AI agent's source directory: read the code, then attack it in a sandbox and write the report (same as: avhsol .)", "codebase"},
 	{"Audit a scenario", "Static review of what an agent is allowed to do: over-privilege and the lethal trifecta", "audit"},
 	{"Attack campaign", "Run the seed attacks against an agent, optionally with the benign regression tasks", "campaign"},
 	{"Adaptive hunt", "Let the attacker search for working attacks, re-run and shrink the winners", "hunt"},
@@ -118,7 +120,12 @@ func New(root string) *Model {
 	return m
 }
 
-func prefsPath(root string) string { return filepath.Join(root, "out", ".tui.json") }
+func prefsPath(root string) string {
+	if home.Installed() { // never write into the (possibly read-only) asset directory
+		return filepath.Join(home.StateDir(), ".tui.json")
+	}
+	return filepath.Join(root, "out", ".tui.json")
+}
 
 func loadPrefs(root string) prefs {
 	var p prefs
@@ -317,7 +324,7 @@ func (m *Model) openMenu(action string) (tea.Model, tea.Cmd) {
 			m.form.fields[0].set(v)
 		}
 		m.push(mAuditPick)
-	case "campaign", "hunt", "validate", "fork":
+	case "campaign", "hunt", "validate", "fork", "codebase":
 		m.form = newForm(action, m.root, m.prefs, m.gvisor)
 		m.push(mForm)
 	case "status":

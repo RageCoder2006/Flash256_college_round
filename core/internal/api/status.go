@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/41vi4p/avhsol/core/internal/home"
 	"io"
 	"net/http"
 	"net/url"
@@ -213,7 +214,7 @@ func (s *Server) health(ctx context.Context) []Health {
 	} else {
 		add(Health{ID: "chrome", Label: "PDF export (Chrome)", State: "warn", Detail: "not found; set AVHSOL_CHROME for PDF reports"})
 	}
-	key := graph.Setting("AVHSOL_SIGNING_KEY", "", "deploy/stack/signing.key")
+	key := graph.Setting("AVHSOL_SIGNING_KEY", "", home.SigningKey())
 	if _, err := os.Stat(key); err != nil {
 		add(Health{ID: "signing", Label: "Trace signing key", State: "warn", Detail: "none; run avhsol keygen"})
 	} else {

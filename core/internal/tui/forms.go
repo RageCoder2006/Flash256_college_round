@@ -189,6 +189,14 @@ func newForm(action, root string, p prefs, gvisor bool) *form {
 	out := &field{key: "out", label: "Output directory", kind: fText, text: orDefault(p.OutDir, "out"), help: "Where traces and reports go"}
 	var fm *form
 	switch action {
+	case "codebase":
+		cwd, _ := os.Getwd()
+		fm = &form{action: action, title: "Audit a codebase", fields: []*field{
+			{key: "dir", label: "Agent code directory", kind: fText, text: cwd, help: "The directory holding the agent's source. It is read, and run read-only in a sandbox; nothing is written there"},
+			{key: "mode", label: "What to do", kind: fSelect, options: []option{{"Read the code, then attack it", "full", "Needs a model (AVHSOL_LLM_*) and a launch recipe: a recognised agent or an avhsol.yaml"}, {"Read the code only", "static", "No agent is launched and no model is needed"}}},
+			{key: "repeats", label: "Repeats per attack", kind: fNumber, num: 3, min: 1, max: 20, help: "3 or more is needed before a risk rating can be given"},
+			{key: "online", label: "Check dependency versions online", kind: fBool, help: "Sends package names and versions to osv.dev"},
+			{key: "out", label: "Run directory", kind: fText, text: "", help: "Empty = a new directory under the AVHSOL state directory, never inside the code"}}}
 	case "campaign":
 		fm = &form{action: action, title: "Attack campaign", fields: []*field{scen, seeds, target, guard, iso,
 			{key: "repeats", label: "Repeats per attack", kind: fNumber, num: 1, min: 1, max: 20, help: "3 or more is needed before a rating can be given"},
@@ -240,6 +248,22 @@ func orDefault(a, b string) string {
 // argv builds the command line for the action. It is the single place that turns choices into flags, so what the form shows
 // is exactly what runs.
 func (fm *form) argv(exe string, guardURL string) []string {
+	if fm.action == "codebase" { // avhsol <dir> [flags]: the directory form of the command
+		a := []string{exe, orDefault(fm.val("dir"), ".")}
+		if fm.val("mode") == "static" {
+			a = append(a, "--static")
+		}
+		if r := fm.val("repeats"); r != "" {
+			a = append(a, "--repeats", r)
+		}
+		if fm.val("online") != "" {
+			a = append(a, "--online")
+		}
+		if o := fm.val("out"); o != "" {
+			a = append(a, "--out", o)
+		}
+		return a // the guard proxy is started (and stopped) by the run itself unless AVHSOL_GUARD_URL names one
+	}
 	a := []string{exe, fm.action}
 	add := func(flag, v string) {
 		if v != "" {

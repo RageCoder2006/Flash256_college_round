@@ -119,7 +119,7 @@ func TestMenuNavigationAndBack(t *testing.T) {
 	if homeMenu[m.cursor].action != "quit" {
 		t.Fatalf("wraps to quit, got %s", homeMenu[m.cursor].action)
 	}
-	m.cursor = 1
+	m.cursor = menuIndex("campaign")
 	send(m, "enter")
 	if m.mode != mForm || m.form.action != "campaign" {
 		t.Fatalf("enter should open the campaign form, mode %v", m.mode)
@@ -132,7 +132,7 @@ func TestMenuNavigationAndBack(t *testing.T) {
 
 func TestFormFieldsChangeAndTextEdits(t *testing.T) {
 	m := fresh(t)
-	m.cursor = 1
+	m.cursor = menuIndex("campaign")
 	send(m, "enter")
 	for i := 0; i < 7; i++ { // to "Simulated model"
 		send(m, "down")
@@ -156,7 +156,7 @@ func TestFormFieldsChangeAndTextEdits(t *testing.T) {
 
 func TestForkNeedsATraceAndDoctorNeverShowsValues(t *testing.T) {
 	m := fresh(t)
-	m.cursor = 4
+	m.cursor = menuIndex("fork")
 	send(m, "enter")
 	if m.form.action != "fork" {
 		t.Fatal("fork form")
@@ -184,5 +184,32 @@ func TestViewFillsTheWindowAndColourCanBeOff(t *testing.T) {
 	}
 	if !strings.Contains(v, "Attack campaign") {
 		t.Fatal("menu items must be listed")
+	}
+}
+
+func menuIndex(action string) int {
+	for i, it := range homeMenu {
+		if it.action == action {
+			return i
+		}
+	}
+	panic("no menu item " + action)
+}
+
+func TestCodebaseFormBuildsTheDirectoryCommand(t *testing.T) {
+	m := fresh(t)
+	m.cursor = menuIndex("codebase")
+	send(m, "enter")
+	if m.mode != mForm || m.form.action != "codebase" {
+		t.Fatalf("mode %v", m.mode)
+	}
+	m.form.get("dir").text = "/some/agent"
+	argv := m.form.argv("avhsol", "")
+	if len(argv) < 2 || argv[1] != "/some/agent" || strings.Contains(strings.Join(argv, " "), "--static") {
+		t.Fatalf("%v", argv)
+	}
+	m.form.get("mode").idx = 1
+	if got := strings.Join(m.form.argv("avhsol", ""), " "); !strings.Contains(got, "--static") {
+		t.Fatalf("static mode: %s", got)
 	}
 }

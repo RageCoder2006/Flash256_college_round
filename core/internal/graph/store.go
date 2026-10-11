@@ -5,9 +5,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/41vi4p/avhsol/core/internal/home"
 	"github.com/41vi4p/avhsol/core/internal/vec"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
@@ -23,7 +25,7 @@ type Config struct{ URI, User, Password, Database string }
 
 func dotenv() map[string]string {
 	env := map[string]string{}
-	for _, p := range []string{os.Getenv("AVHSOL_STACK_ENV"), "deploy/stack/.env", "../deploy/stack/.env", "../../deploy/stack/.env", "../../../deploy/stack/.env", "../../../../deploy/stack/.env"} {
+	for _, p := range []string{os.Getenv("AVHSOL_STACK_ENV"), filepath.Join(home.ConfigDir(), ".env"), filepath.Join(home.ConfigDir(), "stack.env"), "deploy/stack/.env", "../deploy/stack/.env", "../../deploy/stack/.env", "../../../deploy/stack/.env", "../../../../deploy/stack/.env"} {
 		if p == "" {
 			continue
 		}

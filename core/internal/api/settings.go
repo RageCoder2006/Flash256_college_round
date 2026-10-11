@@ -15,6 +15,7 @@ import (
 	"github.com/41vi4p/avhsol/core/internal/cliagent"
 	"github.com/41vi4p/avhsol/core/internal/guard"
 	"github.com/41vi4p/avhsol/core/internal/scenario"
+	"github.com/41vi4p/avhsol/core/internal/tools"
 )
 
 // Settings are the non-secret defaults an administrator can change from the dashboard. They are stored as JSON next to the
@@ -34,8 +35,12 @@ type Settings struct {
 	RefreshSec       int      `json:"refresh_sec"`      // Status page update interval
 	IntelSyncHours   int      `json:"intel_sync_hours"` // 0 = manual only (informational: the scheduler is not built)
 	DisabledDefenses []string `json:"disabled_defenses"`
-	UpdatedBy        string   `json:"updated_by,omitempty"`
-	UpdatedAt        string   `json:"updated_at,omitempty"`
+	// MCPEnabled turns on POST /mcp (the platform as an MCP server for Claude Code or another harness); MCPTools is the
+	// allow-list of tool names it may serve. Empty means the defaults: everything that does not launch agents.
+	MCPEnabled bool     `json:"mcp_enabled"`
+	MCPTools   []string `json:"mcp_tools"`
+	UpdatedBy  string   `json:"updated_by,omitempty"`
+	UpdatedAt  string   `json:"updated_at,omitempty"`
 }
 
 type settingsStore struct {
@@ -98,6 +103,7 @@ func overlay(base, f Settings) Settings {
 		base.RefreshSec = f.RefreshSec
 	}
 	base.IntelSyncHours, base.DisabledDefenses = f.IntelSyncHours, f.DisabledDefenses
+	base.MCPEnabled, base.MCPTools = f.MCPEnabled, f.MCPTools
 	base.UpdatedBy, base.UpdatedAt = f.UpdatedBy, f.UpdatedAt
 	return base
 }
@@ -238,6 +244,11 @@ func (s *Server) validateSettings(v *Settings) error {
 	for _, d := range v.DisabledDefenses {
 		if !known[d] {
 			return fmt.Errorf("unknown defense %q", d)
+		}
+	}
+	for _, n := range v.MCPTools {
+		if _, ok := tools.Find(n); !ok {
+			return fmt.Errorf("unknown tool %q in mcp_tools", n)
 		}
 	}
 	return nil

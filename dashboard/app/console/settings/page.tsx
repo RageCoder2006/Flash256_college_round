@@ -5,6 +5,7 @@ import { API, ApiError, get, post, put, setToken, type Catalog, type IntelSource
 import { ago } from "@/components/intel/shared";
 import type { StatusSnapshot } from "@/lib/status";
 import { useFetch } from "@/lib/use";
+import { ToolsSection } from "@/components/settings/ToolsSection";
 
 interface SettingsResp { settings: Settings; catalog: Catalog; defenses: string[]; secrets_note: string }
 
@@ -147,6 +148,8 @@ export default function SettingsPage() {
           <label className="ti-check"><input type="checkbox" checked={reduce} onChange={(e) => { setReduce(e.target.checked); try { localStorage.setItem("avhsol.motion", e.target.checked ? "reduce" : ""); } catch { /* ignore */ } document.documentElement.dataset.motion = e.target.checked ? "reduce" : ""; }} /> Reduce motion (also follows your system setting)</label>
         </Section>
       </div>
+
+      <ToolsSection draft={draft} isAdmin={isAdmin} onSaved={(text, bad) => flash(!!bad, text)} />
 
       <Section title="Danger zone" hint="admin only, cannot be undone" danger>
         <p style={{ margin: "0 0 10px", fontSize: 13.5 }}><ShieldAlert size={14} style={{ verticalAlign: -2, color: "var(--breach)" }} /> Resetting the graph deletes every episode, step, verdict, intel node and vector. Recorded traces on disk are not touched, so the graph can be rebuilt with <code>avhsol graph ingest</code>.</p>

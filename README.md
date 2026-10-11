@@ -50,6 +50,14 @@ Docs for continuing the work: [docs/README.md](docs/README.md) (status, roadmap,
 
 Key features and how far each goes: [docs/KEY-FEATURES.md](docs/KEY-FEATURES.md). Live monitoring and optional Prometheus/Grafana: [docs/MONITORING.md](docs/MONITORING.md).
 
+## Audit your own agent (installed CLI)
+
+```
+scripts/install.sh                     # user-level, no sudo (docs/INSTALL.md)
+cd /path/to/your/agent && avhsol .     # read the code, attack it in a sandbox, write the report (docs/WHITEBOX.md)
+claude mcp add avhsol -- avhsol mcp    # use AVHSOL from Claude Code (docs/MCP.md)
+```
+
 ## Quick start
 
 ```bash
@@ -153,6 +161,8 @@ Live runs against `dealignai/Ornith-1.5-35B-A3B-UNCENSORED-GGUF` (8k context):
 Caveats: one model, small samples (exfiltration vs control p≈0.11), and the coding target ran with thinking off.
 
 ## Not built yet
+
+* A separate black-box command for deployed agents (the `http` target is the route today); multi-stage attacks against launched CLI agents; tool extraction beyond Python, TypeScript/JavaScript and Go patterns.
 
 A micro-VM sandbox tier (gVisor is available, see [docs/SANDBOX.md](docs/SANDBOX.md)); verification of the Claude Code and MCP target examples against the
 real agents; threat-intel scheduling, more feeds and a dependency-aware match; reading TRIVEKTRA's eBPF findings into traces (spans are emitted); TLS on the

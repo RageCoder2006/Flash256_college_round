@@ -54,6 +54,13 @@ hideable sidebar. (Frozen during the latest round.)
 * **Full chain** (stage 2, a fresh session, recalled the note and sent data outside): **0 of 12**; no email to an outside address in any run.
 * So the platform can detect and label a multi-stage attack and the model is partly vulnerable to the first stage, but **this model did not complete the chain**. The pipeline's positive case is demonstrated only with the simulated model (labelled) and by unit tests; no real-model multi-stage exploit has been observed.
 
+## Install, `avhsol .` and MCP round
+
+* **Done and tested:** location-independent paths (`internal/home`; installer verified into a temp prefix and run from an unrelated directory), `avhsol <dir>` (static code audit plus automatic sandboxed attack, validation, evaluation and reports), `avhsol init`, guard proxy auto-start with model/key override, the tool registry (12 tools) shown in Settings > Tools, `avhsol mcp` (stdio) and `POST /mcp`, a TUI "Audit a codebase" entry.
+* **Verified with a scripted mock model only:** the full `avhsol .` pipeline on pi and on a toy Python agent (pipeline mechanics, not a measurement). A run against the real model needs `AVHSOL_LLM_*` in your environment and has not been done for this round.
+* **Not verified:** the new Settings > Tools section was type-checked and built, and its API was tested, but not looked at in a browser (the browser extension was not connected); registering the server in a live Claude Code (`claude mcp add`) was not done, only an MCP stdio handshake and calls.
+* **Not built:** multi-stage attacks for launched CLI agents (skipped with a note), a separate black-box command, graph/guard/correction tools over MCP, tool extraction beyond the Python/TS/JS/Go patterns.
+
 ## Not verified / not built
 
 * **Real agents**: `targets/claude-code.yaml` and `targets/mcp-example.yaml` were not run against the real CLIs. The Anthropic translation was not run with a real model.

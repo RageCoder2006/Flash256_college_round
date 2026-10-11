@@ -274,6 +274,13 @@ async fn exchange(s: &Shared, auth: Option<header::HeaderValue>, mut payload: Va
     if mode == Mode::Enforce {
         sanitize_request(s, &mut payload);
     }
+    apply_upstream_model(&mut payload, std::env::var("AVHSOL_UPSTREAM_MODEL").ok().as_deref());
+    // An audited agent holds a placeholder key; the real upstream key (environment only) replaces it.
+    let auth = std::env::var("AVHSOL_UPSTREAM_KEY")
+        .ok()
+        .filter(|k| !k.is_empty())
+        .and_then(|k| format!("Bearer {k}").parse().ok())
+        .or(auth);
     let url = format!("{}/chat/completions", s.upstream.trim_end_matches('/'));
     let mut rb = s.http.post(url).json(&payload);
     if let Some(a) = auth {
@@ -305,6 +312,13 @@ async fn exchange(s: &Shared, auth: Option<header::HeaderValue>, mut payload: Va
     }
     s.record_exchange(&ctx.tool_results, &done.text, &done.calls, &done.blocked);
     Ok(resp)
+}
+
+/// An audited agent hard-codes a model name the user's endpoint may not serve: AVHSOL_UPSTREAM_MODEL replaces it.
+fn apply_upstream_model(payload: &mut Value, model: Option<&str>) {
+    if let Some(m) = model.filter(|m| !m.is_empty()) {
+        payload["model"] = Value::String(m.to_string());
+    }
 }
 
 async fn chat(State(s): State<Arc<Shared>>, headers: HeaderMap, body: bytes::Bytes) -> Response {
@@ -381,5 +395,22 @@ mod tests {
         let t = cassette_response(&json!({"text": "done", "tool_calls": []}));
         assert_eq!(t["choices"][0]["finish_reason"], "stop");
         assert_eq!(t["choices"][0]["message"]["content"], "done");
+    }
+}
+
+#[cfg(test)]
+mod model_override_tests {
+    use super::*;
+
+    #[test]
+    fn upstream_model_replaces_the_agents_choice() {
+        let mut p = json!({"model": "gpt-4o", "messages": []});
+        apply_upstream_model(&mut p, Some("local-35b"));
+        assert_eq!(p["model"], "local-35b");
+        apply_upstream_model(&mut p, Some(""));
+        assert_eq!(p["model"], "local-35b", "an empty override changes nothing");
+        let mut q = json!({"model": "gpt-4o"});
+        apply_upstream_model(&mut q, None);
+        assert_eq!(q["model"], "gpt-4o");
     }
 }

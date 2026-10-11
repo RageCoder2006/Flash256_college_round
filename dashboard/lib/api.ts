@@ -450,7 +450,7 @@ export interface ReportMeta { id: string; run: string; format: string; skeleton:
 export interface ReportRuns { runs: RunRow[]; skeletons: string[]; formats: string[]; pdf: boolean; defaults: Settings }
 export interface Settings {
   scenario: string; seeds: string; target: string; isolation: string; guard_mode: string; offline: boolean; repeats: number; budget: number;
-  report_skeleton: string; report_title: string; classification: string; refresh_sec: number; intel_sync_hours: number; disabled_defenses: string[]; updated_by?: string; updated_at?: string;
+  report_skeleton: string; report_title: string; classification: string; refresh_sec: number; intel_sync_hours: number; disabled_defenses: string[]; mcp_enabled?: boolean; mcp_tools?: string[]; updated_by?: string; updated_at?: string;
 }
 export interface CatalogItem { path: string; name: string; description?: string; kind?: string; sandbox?: boolean }
 export interface Catalog { scenarios: CatalogItem[]; seeds: CatalogItem[]; targets: CatalogItem[] }
@@ -481,3 +481,10 @@ export interface Evaluation {
   defense?: { replayed: number; blocked: number; still_succeeding: number; benign_guard_off: string; benign_guard_on: string; verdict: string; contribution?: { defense: string; success_without_it: Rate; matters: boolean }[] };
   does_not_show: string[];
 }
+
+export interface PlatformTool {
+  name: string; title: string; description: string; effect: "read" | "writes" | "launches"; role: string; min_role: number;
+  input_schema: { properties?: Record<string, { type?: string; description?: string; enum?: string[] }>; required?: string[] };
+  mcp_allowed: boolean; mcp_exposed: boolean;
+}
+export interface ToolsResp { tools: PlatformTool[]; mcp_enabled: boolean; connect: { stdio: string; http: string } }

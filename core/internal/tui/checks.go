@@ -3,8 +3,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"github.com/41vi4p/avhsol/core/internal/home"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/41vi4p/avhsol/core/internal/cliagent"
@@ -23,7 +23,7 @@ type Check struct {
 	Fix    string
 }
 
-func signingKey() string { return graph.Setting("AVHSOL_SIGNING_KEY", "", "deploy/stack/signing.key") }
+func signingKey() string { return graph.Setting("AVHSOL_SIGNING_KEY", "", home.SigningKey()) }
 
 // GuardURL is where the guard proxy is expected.
 func GuardURL() string {
@@ -75,7 +75,7 @@ func RunChecks(ctx context.Context, root string) []Check {
 		}
 		cancel()
 	}
-	sb := graph.Setting("AVHSOL_SANDBOX", "", filepath.Join(root, "guard/target/release/avhsol-sandbox"))
+	sb := graph.Setting("AVHSOL_SANDBOX", "", home.Bin("avhsol-sandbox"))
 	if _, err := os.Stat(sb); err != nil {
 		add(Check{"Sandbox (Landlock)", "bad", "avhsol-sandbox not found", "cd guard && cargo build --release"})
 	} else {

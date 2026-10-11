@@ -1,4 +1,4 @@
-.PHONY: build test demo demo-offline pi-build
+.PHONY: build test demo demo-offline pi-build install uninstall
 
 pi-build:
 	cd pi && npm install --ignore-scripts && npm run hydrate:model-data && npm run build:offline
@@ -18,3 +18,10 @@ demo-offline: build
 # Guard + API + dashboard together. AVHSOL_OFFLINE=1 makes runs default to the simulated model.
 demo:
 	AVHSOL_OFFLINE=1 ./scripts/demo.sh
+
+# User-level install (no sudo): ~/.local/bin/avhsol, avhsol-proxy, avhsol-sandbox and ~/.local/share/avhsol
+install:
+	./scripts/install.sh
+
+uninstall:
+	./scripts/install.sh --uninstall

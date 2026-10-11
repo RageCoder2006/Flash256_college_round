@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/41vi4p/avhsol/core/internal/home"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -69,7 +70,7 @@ var formatType = map[string]string{"html": "text/html; charset=utf-8", "pdf": "a
 
 func (s *Server) exportOptions(dir, scenarioID, title, class string) export.Options {
 	o := export.Options{Dir: dir, ScenarioDir: filepath.Dir(s.cfg.ScenarioPath), Scenario: scenarioID, Title: title, Classification: class}
-	if pub, err := sign.LoadPublic(graph.Setting("AVHSOL_SIGNING_KEY", "", "deploy/stack/signing.key") + ".pub"); err == nil {
+	if pub, err := sign.LoadPublic(graph.Setting("AVHSOL_SIGNING_KEY", "", home.SigningKey()) + ".pub"); err == nil {
 		o.Pub = pub
 	}
 	return o

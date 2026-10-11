@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/41vi4p/avhsol/core/internal/home"
 	"net/http"
 	"os"
 	"os/exec"
@@ -170,6 +171,7 @@ func (s *Server) Handler() http.Handler {
 	s.statusRoutes(mux)
 	s.reportRoutes(mux)
 	s.settingsRoutes(mux)
+	s.toolsRoutes(mux)
 	s.sampler() // start the host sampler so the Status page has history on first load
 	return secure(cors(mux))
 }
@@ -657,7 +659,7 @@ func (s *Server) reportHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "title or classification too long", http.StatusBadRequest)
 		return
 	}
-	if pub, err := sign.LoadPublic(graph.Setting("AVHSOL_SIGNING_KEY", "", "deploy/stack/signing.key") + ".pub"); err == nil {
+	if pub, err := sign.LoadPublic(graph.Setting("AVHSOL_SIGNING_KEY", "", home.SigningKey()) + ".pub"); err == nil {
 		o.Pub = pub // verify trace signatures; the API itself never holds the private key
 	}
 	body, ct, err := export.Generate(o, skeleton, format)

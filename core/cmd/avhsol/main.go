@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/41vi4p/avhsol/core/internal/home"
 	"net"
 	"os"
 	"os/exec"
@@ -51,6 +52,9 @@ func usage() {
 	fmt.Fprintln(os.Stderr, brand.Banner()+"\n"+brand.Credits()+"\n\n"+`usage: avhsol <command> [flags]
 
 commands:
+  <dir>      audit the AI agent whose code is in <dir> (try: avhsol .): reads the code, then attacks it in a sandbox and writes the report
+  init       write a starter avhsol.yaml (how to launch your agent) into a codebase
+  mcp        expose AVHSOL's tools to Claude Code or any MCP client over stdio (claude mcp add avhsol -- avhsol mcp)
   tui        interactive menus: pick a scenario, agent and options, then audit, attack, hunt or validate (also: run avhsol with no arguments)
   audit      static permission audit of a scenario
   campaign   run seed attacks (and optionally the benign regression suite)
@@ -89,7 +93,18 @@ func main() {
 		usage()
 	}
 	var err error
+	if dirArg(os.Args[1]) { // `avhsol .`: audit the agent code in this directory
+		if err := cmdWhitebox(os.Args[1], os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	switch os.Args[1] {
+	case "init":
+		err = cmdInit(os.Args[2:])
+	case "mcp":
+		err = cmdMCP(os.Args[2:])
 	case "audit":
 		err = cmdAudit(os.Args[2:])
 	case "campaign":
@@ -145,7 +160,7 @@ func cmdAudit(args []string) error {
 	fs := flag.NewFlagSet("audit", flag.ExitOnError)
 	scPath := fs.String("scenario", "scenarios/hr-records.yaml", "scenario file")
 	_ = fs.Parse(args)
-	sc, err := scenario.Load(*scPath)
+	sc, err := scenario.Load(home.Resolve(*scPath))
 	if err != nil {
 		return err
 	}
@@ -160,7 +175,7 @@ func cmdAudit(args []string) error {
 }
 
 func signingKeyPath() string {
-	return graph.Setting("AVHSOL_SIGNING_KEY", "", "deploy/stack/signing.key")
+	return graph.Setting("AVHSOL_SIGNING_KEY", "", home.SigningKey())
 }
 
 func cmdKeygen(args []string) error {
@@ -223,10 +238,10 @@ func addCommon(fs *flag.FlagSet) *common {
 	fs.IntVar(&c.repeats, "repeats", 1, "runs per seed×surface")
 	fs.BoolVar(&c.offline, "offline", false, "SIMULATED gullible model (pipeline test; not a security result)")
 	fs.StringVar(&c.guardURL, "guard-url", os.Getenv("AVHSOL_GUARD_URL"), "avhsol-proxy base URL, e.g. http://127.0.0.1:7077")
-	fs.StringVar(&c.harnessCmd, "harness", envOr("AVHSOL_HARNESS_CMD", "node pi/packages/avhsol/src/rpc.ts"), "command that starts the TS harness")
+	fs.StringVar(&c.harnessCmd, "harness", envOr("AVHSOL_HARNESS_CMD", defaultHarnessCmd()), "command that starts the TS harness")
 	fs.StringVar(&c.llmURL, "llm-url", os.Getenv("AVHSOL_LLM_BASE_URL"), "OpenAI-compatible base URL (…/v1)")
 	fs.StringVar(&c.llmModel, "llm-model", os.Getenv("AVHSOL_LLM_MODEL"), "model id")
-	fs.StringVar(&c.sandboxBin, "sandbox", envOr("AVHSOL_SANDBOX", "guard/target/release/avhsol-sandbox"), "avhsol-sandbox binary (used when the scenario has sandbox: true)")
+	fs.StringVar(&c.sandboxBin, "sandbox", envOr("AVHSOL_SANDBOX", home.Bin("avhsol-sandbox")), "avhsol-sandbox binary (used when the scenario has sandbox: true)")
 	fs.StringVar(&c.kernelURL, "kernel-otlp", os.Getenv("AVHSOL_KERNEL_OTLP"), "TRIVEKTRA OTLP receiver (e.g. http://127.0.0.1:4318): emit a span per sandboxed tool call")
 	fs.StringVar(&c.thinking, "target-thinking", "default", "target model chain-of-thought: default|off (off is faster; changes the target's behaviour)")
 	fs.StringVar(&c.isolation, "isolation", "", "how a -target agent is confined: landlock (default) or gvisor (Docker + runsc); overrides the target file")
@@ -246,6 +261,7 @@ type env struct {
 }
 
 func (c *common) setup(ctx context.Context, needGuard bool) (*env, error) {
+	c.scPath, c.seedPath, c.targetPath = home.Resolve(c.scPath), home.Resolve(c.seedPath), home.Resolve(c.targetPath)
 	httpTarget := false // a black-box HTTP agent brings its own model: AVHSOL needs none to drive it
 	if c.targetPath != "" {
 		if t, err := cliagent.Load(c.targetPath); err == nil && t.Kind == "http" {
@@ -271,17 +287,24 @@ func (c *common) setup(ctx context.Context, needGuard bool) (*env, error) {
 	if err != nil {
 		return nil, err
 	}
-	hc, err := harness.Start(strings.Fields(c.harnessCmd))
-	if err != nil {
-		ws.Close()
-		return nil, err
-	}
-	cleanup := func() { hc.Close(); ws.Close() }
-	pctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	if err := hc.Ping(pctx); err != nil {
-		cleanup()
-		return nil, fmt.Errorf("harness not responding: %w", err)
+	var hc *harness.Client
+	cleanup := func() { ws.Close() }
+	// A CLI/HTTP target brings its own tools: the pi harness (Node) is only needed for simulated-tool scenarios and LLM payload writing.
+	if c.targetPath != "" && !harnessPresent(c.harnessCmd) {
+		fmt.Println("harness: not installed (not needed for a -target agent; simulated-tool scenarios and LLM payload writing need it)")
+	} else {
+		hc, err = harness.Start(strings.Fields(c.harnessCmd))
+		if err != nil {
+			ws.Close()
+			return nil, err
+		}
+		cleanup = func() { hc.Close(); ws.Close() }
+		pctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		if err := hc.Ping(pctx); err != nil {
+			cleanup()
+			return nil, fmt.Errorf("harness not responding: %w", err)
+		}
 	}
 	llmBase := c.llmURL
 	if c.guardURL != "" && !c.offline {
@@ -653,7 +676,7 @@ func cmdServe(args []string) error {
 	outDir := fs.String("out", "out", "directory holding traces/ and report JSON")
 	scPath := fs.String("scenario", "scenarios/hr-records.yaml", "scenario file")
 	seedsPath := fs.String("seeds", "seeds/seeds.yaml", "seed corpus for launched runs")
-	sandboxBin := fs.String("sandbox", envOr("AVHSOL_SANDBOX", "guard/target/release/avhsol-sandbox"), "avhsol-sandbox binary for launched runs")
+	sandboxBin := fs.String("sandbox", envOr("AVHSOL_SANDBOX", home.Bin("avhsol-sandbox")), "avhsol-sandbox binary for launched runs")
 	guardURL := fs.String("guard-url", os.Getenv("AVHSOL_GUARD_URL"), "avhsol-proxy base URL")
 	offline := fs.Bool("offline", false, "launch runs with the simulated model by default")
 	useGraph := fs.Bool("graph", os.Getenv("AVHSOL_GRAPH") == "1", "serve the trace graph (Neo4j + Qdrant)")
@@ -663,6 +686,7 @@ func cmdServe(args []string) error {
 	allowRemote := fs.Bool("allow-remote", false, "allow listening on a non-loopback address (requires TLS and tokens)")
 	_ = fs.Parse(args)
 
+	*scPath, *seedsPath = home.Resolve(*scPath), home.Resolve(*seedsPath)
 	host, _, _ := net.SplitHostPort(*addr)
 	loopback := host == "127.0.0.1" || host == "::1" || host == "localhost"
 	if !loopback && !*allowRemote {
@@ -735,6 +759,10 @@ func cliVars(c *common) cliagent.Vars {
 	if cwd, err := os.Getwd(); err == nil {
 		v["cwd"] = cwd
 		v["pi_dir"] = filepath.Join(cwd, "pi")
+		if d := os.Getenv("AVHSOL_AGENT_DIR"); d != "" {
+			v["pi_dir"] = d
+			v["agent_dir"] = d
+		}
 	}
 	if p, err := exec.LookPath("node"); err == nil {
 		if rp, err := filepath.EvalSymlinks(p); err == nil {
@@ -842,7 +870,7 @@ func cmdExport(args []string) error {
 		fmt.Print(string(b))
 		return nil
 	}
-	o := export.Options{Dir: *in, ScenarioDir: *scenarios, Scenario: *scID, Title: *title, Classification: *class}
+	o := export.Options{Dir: *in, ScenarioDir: home.Resolve(*scenarios), Scenario: *scID, Title: *title, Classification: *class}
 	if pub, err := sign.LoadPublic(signingKeyPath() + ".pub"); err == nil {
 		o.Pub = pub
 	}
@@ -862,4 +890,22 @@ func cmdExport(args []string) error {
 	}
 	fmt.Printf("wrote %s (%d bytes, %s, skeleton %s)\n", path, len(body), *format, *skeleton)
 	return nil
+}
+
+// harnessPresent reports whether the harness script named in the command exists.
+func harnessPresent(cmd string) bool {
+	f := strings.Fields(cmd)
+	if len(f) < 2 {
+		return len(f) == 1
+	}
+	_, err := os.Stat(f[len(f)-1])
+	return err == nil
+}
+
+// defaultHarnessCmd starts the pi harness from a checkout or an install that bundled it (scripts/install.sh --with-harness).
+func defaultHarnessCmd() string {
+	if d := home.HarnessDir(); d != "" {
+		return "node " + filepath.Join(d, "packages", "avhsol", "src", "rpc.ts")
+	}
+	return "node pi/packages/avhsol/src/rpc.ts"
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/41vi4p/avhsol/core/internal/home"
 	"os"
 	"path/filepath"
 
@@ -25,12 +26,22 @@ func buildEvaluation(dir, scenarioDir, scenarioID string) (eval.Evaluation, erro
 	return eval.Summarize(r), nil
 }
 
+// evalScenarioDir is where the evaluation looks up scenarios by id; a whitebox run points it at its generated scenario.
+var evalScenarioOverride string
+
+func evalScenarioDir() string {
+	if evalScenarioOverride != "" {
+		return evalScenarioOverride
+	}
+	return home.Resolve("scenarios")
+}
+
 // printEvaluation shows the evaluation at the end of a run. A directory with no traces simply prints nothing.
 func printEvaluation(dir string) {
 	if m, _ := filepath.Glob(filepath.Join(dir, "traces", "*.json")); len(m) == 0 {
 		return
 	}
-	e, err := buildEvaluation(dir, "scenarios", "")
+	e, err := buildEvaluation(dir, evalScenarioDir(), "")
 	if err != nil {
 		return
 	}
@@ -45,7 +56,7 @@ func cmdSummary(args []string) error {
 	sc := fs.String("scenario", "", "scenario id (default: the one with the most attack runs)")
 	asJSON := fs.Bool("json", false, "print the evaluation as JSON")
 	_ = fs.Parse(args)
-	e, err := buildEvaluation(*in, *scenarios, *sc)
+	e, err := buildEvaluation(*in, home.Resolve(*scenarios), *sc)
 	if err != nil {
 		return err
 	}

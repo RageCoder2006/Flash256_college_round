@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/41vi4p/avhsol/core/internal/home"
 )
 
 // Store is the local intel cache: a JSONL file of items plus per-source sync state. It is the only thing the
@@ -38,7 +40,7 @@ func Dir() string {
 	if d := os.Getenv("AVHSOL_INTEL_DIR"); d != "" {
 		return d
 	}
-	return filepath.Join("deploy", "stack", "intel")
+	return home.IntelDir()
 }
 
 // Open loads (or creates) the store. The directory is private to the user.

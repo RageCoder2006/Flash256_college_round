@@ -32,3 +32,10 @@ tested and the server was listed live by `scengen -mcp`; **no real MCP-capable a
 ## Choosing isolation
 
 `-isolation landlock|gvisor` (or `isolation:` in the target) — see [SANDBOX.md](SANDBOX.md).
+
+## Black-box today
+
+There is no separate black-box command yet. For an agent you can only reach over the network, write an `http` target
+(`targets/http-example.yaml`) and run `avhsol campaign -scenario <scenario> -target <target>.yaml`. Tool calls are not observed in
+that mode and the guard is not in the path, so only outcomes (what the oracle can see in replies and the canary sink) are judged.
+For code you can run, `avhsol .` (WHITEBOX.md) is the better route.

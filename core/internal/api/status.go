@@ -439,7 +439,7 @@ func (s *Server) statusRoutes(mux *http.ServeMux) {
 		t := time.NewTicker(every)
 		defer t.Stop()
 		send := func() {
-			b, _ := json.Marshal(s.statusJSON(r.Context()))
+			b, _ := json.Marshal(nonNull(s.statusJSON(r.Context())))
 			fmt.Fprintf(w, "event: status\ndata: %s\n\n", b)
 			fl.Flush()
 		}

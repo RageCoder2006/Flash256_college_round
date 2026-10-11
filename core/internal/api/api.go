@@ -214,7 +214,7 @@ func cors(next http.Handler) http.Handler {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("content-type", "application/json")
-	_ = json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(nonNull(v))
 }
 
 func readJSONFile(path string) any {

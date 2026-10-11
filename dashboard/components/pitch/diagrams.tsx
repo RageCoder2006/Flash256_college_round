@@ -28,18 +28,21 @@ export function IntelFlow() {
 /** Ways to reach an agent. */
 export function Connectors() {
   return (
-    <Svg h={400} label="Three ways to test an agent: command line, MCP, and HTTP, all judged by the same oracles">
-      <Box x={20} y={30} w={330} h={110} color={C.ts} title="CLI agent  (Claude Code, Codex, pi, …)" lines={["runs its real command in the sandbox", "model traffic only via the guard proxy", "OpenAI or Anthropic wire"]} />
-      <Box x={20} y={160} w={330} h={110} color={C.ts} title="MCP agent" lines={["same as CLI, plus a deliberately poisoned", "MCP server: result or tool description", "carries the payload"]} />
-      <Box x={20} y={290} w={330} h={90} color={C.ext} title="HTTP agent  (black box)" lines={["a remote chat endpoint; we serve the poisoned", "document and watch the canary sink"]} />
-      <Flow d="M350 85 L470 195" color={C.ts} />
-      <Flow d="M350 215 L470 215" color={C.ts} />
-      <Flow d="M350 335 L470 235" color={C.ext} />
-      <Box x={470} y={150} w={260} h={130} color={C.go} title="Same oracles for all" lines={["canary secret reached the sink", "host file read from the sandbox", "forbidden tool call", "the model never decides success"]} />
-      <Flow d="M730 215 L800 215" color={C.go} />
-      <Box x={800} y={110} w={280} h={90} color={C.db} title="What we can see" lines={["CLI / MCP: every model exchange", "and tool call (guard replay works)"]} small />
-      <Box x={800} y={225} w={280} h={90} color={C.ext} title="HTTP: replies and effects only" lines={["no guard in the path, so no replay;", "the report says it was black-box"]} small />
-      <Box x={470} y={310} w={260} h={70} color={C.intel} title="Scenario generator" lines={["tool list or live MCP server → scenario"]} small />
+    <Svg h={470} label="Four ways to test an agent: its source code, a command-line agent, an MCP agent, or an HTTP endpoint, all judged by the same oracles">
+      <Box x={20} y={10} w={330} h={100} color={C.go} title="Your codebase  ·  avhsol ." lines={["reads the code: tools, risky patterns, deps", "then attacks it in the sandbox, automatically", "report lands in the dashboard"]} />
+      <Box x={20} y={125} w={330} h={100} color={C.ts} title="CLI agent  (pi, Codex, Claude Code, …)" lines={["runs its real command in the sandbox", "model traffic only via the guard proxy", "OpenAI or Anthropic wire"]} />
+      <Box x={20} y={240} w={330} h={100} color={C.ts} title="MCP agent" lines={["same as CLI, plus a deliberately poisoned", "MCP server: result or tool description", "carries the payload"]} />
+      <Box x={20} y={355} w={330} h={90} color={C.ext} title="HTTP agent  (black box)" lines={["a remote chat endpoint; we serve the poisoned", "document and watch the canary sink"]} />
+      <Flow d="M350 60 L470 205" color={C.go} />
+      <Flow d="M350 175 L470 215" color={C.ts} />
+      <Flow d="M350 290 L470 235" color={C.ts} />
+      <Flow d="M350 400 L470 250" color={C.ext} />
+      <Box x={470} y={170} w={260} h={130} color={C.go} title="Same oracles for all" lines={["canary secret reached the sink", "host file read from the sandbox", "forbidden tool call", "the model never decides success"]} />
+      <Flow d="M730 235 L800 235" color={C.go} />
+      <Box x={800} y={130} w={280} h={90} color={C.db} title="What we can see" lines={["CLI / MCP: every model exchange", "and tool call (guard replay works)"]} small />
+      <Box x={800} y={245} w={280} h={90} color={C.ext} title="HTTP: replies and effects only" lines={["no guard in the path, so no replay;", "the report says it was black-box"]} small />
+      <Box x={470} y={330} w={260} h={70} color={C.intel} title="Scenario generator" lines={["code, tool list or live MCP server → scenario"]} small />
+      <Box x={800} y={360} w={280} h={85} color={C.rs} title="Or drive AVHSOL from Claude Code" lines={["avhsol mcp: scan code, read runs and", "pull reports from any MCP client"]} small />
     </Svg>
   );
 }

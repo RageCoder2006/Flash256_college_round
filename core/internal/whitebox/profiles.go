@@ -109,9 +109,17 @@ func piProfile(dir string) *Profile {
 		p.Missing = "node is not on PATH"
 	}
 	if _, err := os.Stat(filepath.Join(dir, "packages", "coding-agent", "dist", "cli.js")); err != nil {
-		p.BuildCmd = []string{"npm", "run", "build"}
-		if p.Missing == "" {
-			p.Missing = "pi is not built (packages/coding-agent/dist/cli.js is missing)"
+		// the same steps as `make pi-build`; dependencies are installed without running their install scripts
+		if _, nerr := os.Stat(filepath.Join(dir, "node_modules")); nerr != nil {
+			p.BuildCmd = []string{"sh", "-c", "npm install --ignore-scripts && npm run hydrate:model-data && npm run build:offline"}
+			if p.Missing == "" {
+				p.Missing = "pi is not built and its dependencies are not installed (no node_modules)"
+			}
+		} else {
+			p.BuildCmd = []string{"sh", "-c", "npm run hydrate:model-data && npm run build:offline"}
+			if p.Missing == "" {
+				p.Missing = "pi is not built (packages/coding-agent/dist/cli.js is missing)"
+			}
 		}
 	}
 	return p

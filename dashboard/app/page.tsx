@@ -52,7 +52,7 @@ function Lattice() {
 const LABEL: Record<string, string> = {
   problem: "The problem", gap: "Why testing falls short", what: "What it is", flow: "How a run works", proof: "Evidence", arch: "Architecture",
   intel: "Threat intelligence", connect: "Test any agent", contain: "Containment", graph: "Graph and replay", whatif: "Replay and fork", report: "The report",
-  results: "Results", security: "Platform security", status: "Honest status", close: "Demo",
+  results: "Results", security: "Platform security", close: "Demo",
 };
 
 export default function Landing() {

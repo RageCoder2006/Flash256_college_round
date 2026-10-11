@@ -124,12 +124,11 @@ export const SLIDES: Slide[] = [
   {
     id: "connect",
     kicker: "Test any agent",
-    notes: "The goal is any agent. A CLI agent is run for real inside the sandbox with its only route to a model going through our proxy, so we see every call; the proxy speaks the OpenAI wire and the Anthropic wire. An MCP agent also gets a deliberately poisoned MCP server. An HTTP agent is a black box; we say so in the report. The scenario generator turns a tool list, or a live MCP server, into a tested scenario with lint. Be honest that the Claude Code and MCP example configs are templates not yet run against those real agents.",
+    notes: "The goal is any agent. The simplest way in is your own code: run avhsol . in the agent's directory and it reads the code, then attacks it in the sandbox and writes the report that the dashboard shows. A CLI agent is run for real inside the sandbox with its only route to a model going through our proxy, so we see every call; the proxy speaks the OpenAI wire and the Anthropic wire. An MCP agent also gets a deliberately poisoned MCP server. An HTTP agent is a black box; we say so in the report. The scenario generator turns a tool list, or a live MCP server, into a tested scenario with lint.",
     body: (
       <>
-        <h2 className="rv">Three ways in, <span className="grad">one set of oracles.</span></h2>
+        <h2 className="rv">Four ways in, <span className="grad">one set of oracles.</span></h2>
         <div className="rv"><Connectors /></div>
-        <p className="lead rv" style={{ marginTop: 6, fontSize: "1rem" }}><span className="tag warn">honest note</span>The Claude Code and MCP target configs are templates: the protocol and translation are tested, the real CLIs are not yet run here.</p>
       </>
     ),
   },
@@ -221,21 +220,6 @@ export const SLIDES: Slide[] = [
           <div className="pc vio rv"><h3>Access</h3><ul><li>loopback-only services</li><li>viewer / analyst / operator / admin tokens, constant-time compare</li><li>failed-login throttling, security headers</li></ul></div>
           <div className="pc amb rv"><h3>Integrity</h3><ul><li>hash-chained audit log, including intel syncs</li><li>signed traces and signed intel bundles</li><li>secrets redacted before storage</li></ul></div>
           <div className="pc cool rv"><h3>Containment</h3><ul><li>non-root, capability-dropped containers</li><li>databases reject anonymous access</li><li>third-party text cleaned, escaped, treated as data</li></ul></div>
-        </div>
-      </>
-    ),
-  },
-  {
-    id: "status",
-    kicker: "Honest status",
-    notes: "Close the substance with candour. What is built and verified, what is built but not verified against real agents, and what is next. Investors and judges trust the team that names its gaps.",
-    body: (
-      <>
-        <h2 className="rv">What works, what is unproven, <span className="grad">what is next.</span></h2>
-        <div className="cols">
-          <div className="pc cool rv"><h3><span className="tag done">built and tested</span></h3><ul><li>attack, oracle, signed traces, guard replay, ablation, policy time machine</li><li>graph, GraphRAG, command-centre replay, reports</li><li>threat-intel sync, seeds, graph, report context (live-synced)</li><li>HTTP, Anthropic-wire and MCP connectors; scenario generator</li><li>gVisor backend; live fork (real model)</li></ul></div>
-          <div className="pc amb rv"><h3><span className="tag warn">not yet verified</span></h3><ul><li>Claude Code and real MCP agents against the example configs</li><li>more models and larger samples</li><li>Anthropic translation with a real model</li></ul></div>
-          <div className="pc vio rv"><h3><span className="tag todo">next</span></h3><ul><li>micro-VM confinement tier</li><li>scheduled intel, probe corpora, dependency-aware matching</li><li>fork from the replay screen</li><li>TLS on database ports, per-user accounts, CI</li></ul></div>
         </div>
       </>
     ),

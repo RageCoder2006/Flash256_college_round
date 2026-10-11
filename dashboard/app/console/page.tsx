@@ -131,8 +131,8 @@ export default function StatusPage() {
           )}
         </div>
         <div className="panel">
-          <h3>Containers and services <span>{s?.containers.length ? `${s.containers.length} running` : "docker not in use"}</span></h3>
-          {s && s.containers.length > 0 && (
+          <h3>Containers and services <span>{s?.containers?.length ? `${s.containers.length} running` : "docker not in use"}</span></h3>
+          {!!s?.containers?.length && (
             <table className="tbl"><thead><tr><th>Name</th><th>CPU</th><th>Memory</th><th>PIDs</th></tr></thead>
               <tbody>{s.containers.map((c) => <tr key={c.name}><td><code>{c.name.replace("avhsol-", "")}</code>{c.kind === "episode" && <span className="ti-pill" style={{ ["--c" as string]: "#ffb454", marginLeft: 6 }}>sandbox</span>}</td><td>{c.cpu_percent.toFixed(1)}%</td><td>{fmtBytes(c.mem_bytes)}{c.mem_limit_bytes ? ` / ${fmtBytes(c.mem_limit_bytes)}` : ""}</td><td>{c.pids}</td></tr>)}</tbody></table>
           )}

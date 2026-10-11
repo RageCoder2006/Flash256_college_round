@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { animate } from "animejs";
-import { Brain, ChevronRight, Maximize2, MessageSquare, Pause, Play, RotateCcw, ScanSearch, Send, SkipBack, X } from "lucide-react";
+import { Brain, ChevronRight, History, Maximize2, MessageSquare, Pause, Play, RotateCcw, ScanSearch, Send, SkipBack, X } from "lucide-react";
 import NeuralGraph, { type NeuralHandle } from "@/components/graph3d/NeuralGraph";
 import { Feed, Inspector, NowCard, Telemetry } from "@/components/graph3d/Panels";
 import { ApiError, get, post, type Activation, type EpisodeRow, type GraphAnswer, type Narration, type PathStep, type Subgraph, type TechniqueStat } from "@/lib/api";
@@ -25,7 +25,7 @@ export default function NeuralGraphPage() {
   const status = useFetch<{ configured: boolean }>("/api/graph/status");
   const ready = !!status.data?.configured;
   const overview = useFetch<Subgraph>(ready ? "/api/graph/overview?episodes=60" : null);
-  const eps = useFetch<EpisodeRow[]>(ready ? "/api/graph/episodes?n=60" : null);
+  const eps = useFetch<EpisodeRow[]>(ready ? "/api/graph/episodes?n=200" : null);
   const techs = useFetch<TechniqueStat[]>(ready ? "/api/graph/techniques" : null);
 
   const [scene, setScene] = useState<Scene>(emptyScene());
@@ -45,7 +45,8 @@ export default function NeuralGraphPage() {
   const [size, setSize] = useState({ w: 900, h: 600 });
   const [reduced, setReduced] = useState(false);
   const [dockOpen, setDockOpen] = useState(false);
-  const [tab, setTab] = useState<"inspect" | "ask">("ask");
+  const [tab, setTab] = useState<"inspect" | "ask" | "replays">("ask");
+  const [epFilter, setEpFilter] = useState<"all" | "breached" | "held">("all");
   const stage = useRef<HTMLDivElement>(null);
   const handle = useRef<NeuralHandle>(null);
   const logRef = useRef<HTMLDivElement>(null);
@@ -171,6 +172,9 @@ export default function NeuralGraphPage() {
     setTimeout(() => handle.current?.fit(), 600);
   }
 
+  const allEps = eps.data ?? [];
+  const shownEps = allEps.filter((e) => epFilter === "all" || e.critical_objective_achieved === (epFilter === "breached"));
+
   const path = replayEp ? paths[replayEp] ?? [] : [];
   const seqs = useMemo(() => (replayEp ? scene.nodes.filter((n) => n.ep === replayEp).map((n) => n.seq ?? 0).sort((a, b) => a - b) : []), [scene.nodes, replayEp]);
 
@@ -240,7 +244,7 @@ export default function NeuralGraphPage() {
   if (status.data && !status.data.configured) {
     return <div className="card"><h2>Neural graph</h2><p className="muted">Neo4j is not configured. Start the stack with <code>scripts/stack.sh</code>, then run an attack with <code>-graph</code>.</p></div>;
   }
-  const episodes = (eps.data ?? []).slice(0, 40);
+  const episodes = allEps.slice(0, 40);
   const hovered = hover && hover.id !== picked?.id ? hover : null;
 
   return (
@@ -309,18 +313,46 @@ export default function NeuralGraphPage() {
             <div className="cc-rail">
               <button onClick={() => { setTab("inspect"); setDockOpen(true); }} aria-label="Open inspector" title="Inspect: click a node on the graph"><ScanSearch size={17} /><span>Inspect</span></button>
               <button onClick={() => { setTab("ask"); setDockOpen(true); }} aria-label="Open ask graph" title="Ask the graph a question"><MessageSquare size={17} /><span>Ask</span></button>
+              <button onClick={() => { setTab("replays"); setDockOpen(true); }} aria-label="Open replays" title="List of runs you can replay"><History size={17} /><span>Replays</span></button>
             </div>
           ) : (
             <>
               <div className="cc-tabs" role="tablist">
                 <button role="tab" aria-selected={tab === "inspect"} className={tab === "inspect" ? "on" : ""} onClick={() => setTab("inspect")}><ScanSearch size={14} /> Inspect</button>
                 <button role="tab" aria-selected={tab === "ask"} className={tab === "ask" ? "on" : ""} onClick={() => setTab("ask")}><MessageSquare size={14} /> Ask graph</button>
+                <button role="tab" aria-selected={tab === "replays"} className={tab === "replays" ? "on" : ""} onClick={() => setTab("replays")}><History size={14} /> Replays</button>
                 <button className="cc-min" onClick={() => setDockOpen(false)} aria-label="Minimise panel"><ChevronRight size={16} /></button>
               </div>
               {tab === "inspect" ? (
                 <div className="cc-dock-body">
                   <Inspector node={picked} scene={scene} paths={paths} notes={Object.fromEntries(Object.entries(narr).map(([k, v]) => [k, v.steps]))}
                     techniques={techs.data ?? []} onPick={pickId} onReplay={(id) => void startReplay(id)} />
+                </div>
+              ) : tab === "replays" ? (
+                <div className="cc-dock-body">
+                  <div className="rp-filter" role="group" aria-label="Filter runs">
+                    {(["all", "breached", "held"] as const).map((f) => (
+                      <button key={f} className={epFilter === f ? "on" : ""} onClick={() => setEpFilter(f)}>
+                        {f} ({f === "all" ? allEps.length : allEps.filter((e) => e.critical_objective_achieved === (f === "breached")).length})
+                      </button>
+                    ))}
+                  </div>
+                  <ul className="rp-list">
+                    {shownEps.map((e) => (
+                      <li key={e.id}>
+                        <button className={replayEp === e.id ? "on" : ""} onClick={() => void startReplay(e.id)}>
+                          <Play size={13} />
+                          <span className="rp-main">
+                            <b>{e.id}</b>
+                            <span className="muted">{e.kind} · {e.scenario || "?"} · guard {e.guard_mode || "?"}</span>
+                            <span className="muted">{e.start_ms ? new Date(e.start_ms).toLocaleString() : ""}</span>
+                          </span>
+                          <i className="rp-badge" style={{ color: e.critical_objective_achieved ? COLORS.breach : COLORS.held }}>{e.critical_objective_achieved ? "breached" : "held"}</i>
+                        </button>
+                      </li>
+                    ))}
+                    {!shownEps.length && <li className="muted">{eps.loading ? "Loading runs…" : "No runs recorded yet. Run an attack with -graph."}</li>}
+                  </ul>
                 </div>
               ) : (
                 <div className="cc-dock-body chat-body">

@@ -159,8 +159,8 @@ export function Inspector({ node, scene, paths, notes, techniques, onPick, onRep
       {node.flag && <Row k="Flag" v={node.flag} />}
       <div className="cc-title" style={{ marginTop: 14 }}>Connections · {neighbours.length}</div>
       <div className="ins-links">
-        {neighbours.slice(0, 40).map(({ o, type, out }) => (
-          <button key={o.id + type} onClick={() => onPick(o.id)}>
+        {neighbours.slice(0, 40).map(({ o, type, out }, i) => (
+          <button key={`${o.id}:${type}:${out ? "o" : "i"}:${i}`}onClick={() => onPick(o.id)}>
             <i style={{ background: nodeColor(o) }} />
             <span>{out ? "→" : "←"} {type.toLowerCase().replace("_", " ")}</span>
             <b>{o.label || o.id}</b>

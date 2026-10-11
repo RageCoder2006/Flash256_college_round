@@ -48,6 +48,12 @@ hideable sidebar. (Frozen during the latest round.)
 | Multi-stage attacks: fresh-session follow-up, `multi_stage` oracle, stages in path/report/graph, `inbox-memory` scenario | oracle and breach unit tests; offline pipeline run; see the real-model result below |
 | Terminal UI (`avhsol` / `avhsol tui`), Bubble Tea | unit tests; driven through a pseudo-terminal: menus, forms, audit, an offline campaign with live output and evaluation, traces, intel, Doctor, Status |
 
+### Real-model multi-stage result (Ornith-1.5-35B, simulated-tool harness, thinking off, scratch run directory)
+12 attack runs (4 seeds x 3 repeats) and 3 no-attack controls on `scenarios/inbox-memory.yaml`:
+* **Memory foothold** (stage 1: the agent saved an outsider's planted note to long-term memory): **4 of 12** (33%, 95% CI 14-61%) versus **0 of 3** controls. Higher than the control, but too few runs to tell it from chance (one-sided p = 0.36).
+* **Full chain** (stage 2, a fresh session, recalled the note and sent data outside): **0 of 12**; no email to an outside address in any run.
+* So the platform can detect and label a multi-stage attack and the model is partly vulnerable to the first stage, but **this model did not complete the chain**. The pipeline's positive case is demonstrated only with the simulated model (labelled) and by unit tests; no real-model multi-stage exploit has been observed.
+
 ## Not verified / not built
 
 * **Real agents**: `targets/claude-code.yaml` and `targets/mcp-example.yaml` were not run against the real CLIs. The Anthropic translation was not run with a real model.

@@ -130,7 +130,7 @@ func ItemNodeID(it Item) string { return "intel:" + it.Source + ":" + it.ID }
 // from, the attack techniques they point at, the taxonomy ids those map to, the packages they affect, and links between
 // records that describe the same vulnerability. It reads only the local cache.
 func BuildGraph(st *Store, f Filter, max int) Graph {
-	if max < 1 || max > 400 {
+	if max < 1 || max > 2000 {
 		max = 150
 	}
 	f.Limit = 0

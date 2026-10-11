@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -120,4 +121,27 @@ func TestToolsListingShowsExposure(t *testing.T) {
 			t.Fatalf("%s exposed by default", x.Name)
 		}
 	}
+}
+
+func TestCommandLineRunsAreListedAndScoped(t *testing.T) {
+	s, ts := mcpServerFor(t, false, map[Role]string{RoleViewer: "v"})
+	state := os.Getenv("AVHSOL_STATE")
+	tdir := filepath.Join(state, "runs", "agent-1", "dyn", "traces")
+	if err := os.MkdirAll(tdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.runDirs()["agent-1"]; got != filepath.Join(state, "runs", "agent-1", "dyn") {
+		t.Fatalf("a CLI run is the dyn directory under its run folder: %q", got)
+	}
+	m, err := StoreReport(filepath.Join(state, "runs", "agent-1", "dyn"), "agent-1", "json", "security-report", "t", "C", []byte("{}"), "cli")
+	if err != nil || len(s.reportMetas(filepath.Join(state, "runs", "agent-1", "dyn"))) != 1 || m.File == "" {
+		t.Fatalf("a report stored by the CLI must be listed: %v", err)
+	}
+	req, _ := http.NewRequest("GET", ts.URL+"/api/traces?run=agent-1", nil)
+	req.Header.Set("Authorization", "Bearer v")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("%v %v", err, resp)
+	}
+	resp.Body.Close()
 }

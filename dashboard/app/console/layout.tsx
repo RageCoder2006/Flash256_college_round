@@ -4,6 +4,7 @@ import { ConsoleShell } from "@/components/ConsoleShell";
 import { GuardSwitch } from "@/components/GuardSwitch";
 import { Logo } from "@/components/Logo";
 import { Nav } from "@/components/Nav";
+import { RunPicker } from "@/components/RunPicker";
 
 export default function ConsoleLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -19,6 +20,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           </Link>
           <Nav />
           <div className="side-foot">
+            <RunPicker />
             <GuardSwitch />
             <span>Made by David Porathur and Rishit Baitule</span>
           </div>

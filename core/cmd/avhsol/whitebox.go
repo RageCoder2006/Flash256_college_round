@@ -12,11 +12,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/41vi4p/avhsol/core/internal/api"
 	"github.com/41vi4p/avhsol/core/internal/audit"
 	"github.com/41vi4p/avhsol/core/internal/campaign"
 	"github.com/41vi4p/avhsol/core/internal/eval"
+	"github.com/41vi4p/avhsol/core/internal/export"
+	"github.com/41vi4p/avhsol/core/internal/graph"
 	"github.com/41vi4p/avhsol/core/internal/home"
 	"github.com/41vi4p/avhsol/core/internal/runtime"
+	"github.com/41vi4p/avhsol/core/internal/sign"
 	"github.com/41vi4p/avhsol/core/internal/whitebox"
 	"gopkg.in/yaml.v3"
 )
@@ -251,6 +255,12 @@ func cmdWhitebox(dir string, args []string) error {
 	if *isolation != "" {
 		vargs = append(vargs, "-isolation", *isolation)
 	}
+	graphSet := false
+	fs.Visit(func(f *flag.Flag) { graphSet = graphSet || f.Name == "graph" })
+	if !graphSet && os.Getenv("AVHSOL_GRAPH") != "0" && graphReachable(ctx) {
+		*useGraph = true // the stack is up: record the run so the graph page shows it too
+		fmt.Println("graph: Neo4j is reachable, recording this run in the graph (AVHSOL_GRAPH=0 to skip)")
+	}
 	if *useGraph {
 		vargs = append(vargs, "-graph")
 	}
@@ -300,10 +310,28 @@ func cmdWhitebox(dir string, args []string) error {
 		sEval.status, sEval.note = "failed", err.Error()
 	}
 	reportOK := true
-	for _, f := range []string{"html", "sarif", "json"} {
-		if err := cmdExport([]string{"-in", dyn, "-format", f, "-o", filepath.Join(rd, "report."+f), "-scenarios", filepath.Join(rd, "scenarios"), "-scenario", res.Scenario.ID, "-title", "AVHSOL audit: " + res.Report.Name}); err != nil {
+	formats := []string{"html", "sarif", "json"}
+	if export.PDFAvailable() {
+		formats = append(formats, "pdf")
+	}
+	eo := export.Options{Dir: dyn, ScenarioDir: filepath.Join(rd, "scenarios"), Scenario: res.Scenario.ID, Title: "AVHSOL audit: " + res.Report.Name, Classification: "CONFIDENTIAL"}
+	if pub, err := sign.LoadPublic(signingKeyPath() + ".pub"); err == nil {
+		eo.Pub = pub
+	}
+	if sg, err := sign.LoadSigner(signingKeyPath()); err == nil {
+		eo.Signer = sg
+	}
+	for _, f := range formats {
+		body, _, err := export.Generate(eo, "security-report", f)
+		if err != nil {
 			reportOK = false
 			fmt.Printf("report %s: %v\n", f, err)
+			continue
+		}
+		_ = os.WriteFile(filepath.Join(rd, "report."+f), body, 0o644)
+		// the same report goes into the run's reports/ so the dashboard lists, previews and downloads it
+		if _, err := api.StoreReport(dyn, filepath.Base(rd), f, "security-report", eo.Title, eo.Classification, body, "cli"); err != nil {
+			fmt.Printf("report %s: could not register for the dashboard: %v\n", f, err)
 		}
 	}
 	if reportOK {
@@ -318,7 +346,7 @@ func cmdWhitebox(dir string, args []string) error {
 	}
 	fmt.Printf("   static: %v\n", severityLine(res.Report.Counts()))
 	fmt.Printf("   report:       %s\n   evaluation:   %s\n   static audit: %s\n   traces:       %s\n", filepath.Join(rd, "report.html"), filepath.Join(rd, "evaluation.txt"), filepath.Join(rd, "whitebox.json"), filepath.Join(dyn, "traces"))
-	fmt.Println("   open the dashboard on these with: avhsol serve -out", dyn)
+	fmt.Printf("   dashboard:    this run is listed as %q under Reports (and in the run selector); start it with `avhsol serve` if it is not running\n", filepath.Base(rd))
 	return nil
 }
 
@@ -360,4 +388,20 @@ func writeSeeds(rd string) (string, int, error) {
 	}
 	p := filepath.Join(rd, "seeds.yaml")
 	return p, len(all), os.WriteFile(p, b, 0o644)
+}
+
+// graphReachable reports whether the Neo4j stack answers, without printing anything when it does not.
+func graphReachable(ctx context.Context) bool {
+	cfg := graph.LoadConfig()
+	if cfg.Password == "" {
+		return false
+	}
+	c, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	st, err := graph.Open(c, cfg)
+	if err != nil {
+		return false
+	}
+	st.Close(c)
+	return true
 }

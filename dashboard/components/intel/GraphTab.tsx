@@ -126,11 +126,12 @@ export function GraphTab({ meta }: { meta: IntelSources | null }) {
         </form>
         <select value={source} onChange={(e) => setSource(e.target.value)} aria-label="Source"><option value="">All sources</option>{sources.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}</select>
         <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Kind"><option value="">All kinds</option><option value="advisory">Advisories</option><option value="cve">CVEs</option><option value="paper">Papers</option></select>
-        <select value={n} onChange={(e) => setN(+e.target.value)} aria-label="How many records"><option value={60}>60 records</option><option value={150}>150 records</option><option value={300}>300 records</option></select>
+        <select value={n} onChange={(e) => setN(+e.target.value)} aria-label="How many records"><option value={60}>60 records</option><option value={150}>150 records</option><option value={300}>300 records</option><option value={600}>600 records</option><option value={1000}>1,000 records</option><option value={2000}>2,000 records (heavy)</option></select>
         <label className="ti-check"><input type="checkbox" checked={kev} onChange={(e) => setKev(e.target.checked)} /> Exploited only</label>
       </div>
       {note && <div className="ti-msg" role="status">{note}</div>}
       {err && <div className="ti-msg bad">{err}</div>}
+      <div className="cc-layout">
       <div className="graph-stage cc-stage" ref={stage} style={{ height: "calc(100vh - 250px)" }}>
         <NeuralGraph ref={handle} scene={scene} width={size.w} height={size.h} activation={activation} selected={picked?.id} reduced={reduced} onNodeHover={setHover} onNodeClick={setPicked} />
         <div className="cc-scan" aria-hidden="true" />
@@ -141,11 +142,15 @@ export function GraphTab({ meta }: { meta: IntelSources | null }) {
           <div className="muted" style={{ marginTop: 6 }}>Showing {info.shown} of {info.total} matching records</div>
         </div>
         {shown && <div className="cc-hover glass"><b>{shown.kind}</b> {shown.label}{shown.meta?.title ? ` · ${String(shown.meta.title).slice(0, 90)}` : ""}</div>}
-        <div className="hud tr cc-tools-top" style={{ right: picked ? 392 : 14 }}>
+        <div className="hud tr cc-tools-top">
           <button className="btn ghost" onClick={() => handle.current?.fit()} aria-label="Fit graph to view"><Maximize2 size={14} /> Fit</button>
         </div>
+        {!scene.nodes.length && !err && (
+          <div className="cc-hover glass" style={{ top: "45%" }}><Search size={14} style={{ verticalAlign: -2 }} /> No records to draw. Sync the data sources first.</div>
+        )}
+      </div>
         {picked && (
-          <aside className="cc-dock glass" aria-label="Selected node">
+          <aside className="cc-dock glass" style={{ height: "calc(100vh - 250px)" }} aria-label="Selected node">
             <div className="cc-tabs"><button className="on" style={{ cursor: "default" }}>{picked.kind === "intel" ? "Record" : picked.kind}</button><button className="cc-min" onClick={() => setPicked(null)} aria-label="Close panel"><X size={15} /></button></div>
             <div className="cc-dock-body">
               {picked.kind === "intel" ? <ItemDetail it={asItem(picked)} /> : (
@@ -166,9 +171,6 @@ export function GraphTab({ meta }: { meta: IntelSources | null }) {
               </div>
             </div>
           </aside>
-        )}
-        {!scene.nodes.length && !err && (
-          <div className="cc-hover glass" style={{ top: "45%" }}><Search size={14} style={{ verticalAlign: -2 }} /> No records to draw. Sync the data sources first.</div>
         )}
       </div>
     </div>

@@ -138,7 +138,7 @@ func (s *Server) Handler() http.Handler {
 	h(mux, "GET /api/pairs", RoleViewer, s.pairs)
 	h(mux, "GET /api/audit", RoleViewer, s.auditHandler)
 	h(mux, "GET /api/advisories", RoleViewer, func(w http.ResponseWriter, r *http.Request) {
-		v := readJSONFile(filepath.Join(s.cfg.OutDir, "advisories.json"))
+		v := readJSONFile(filepath.Join(s.outFor(r), "advisories.json"))
 		if v == nil {
 			v = []any{}
 		}
@@ -229,8 +229,23 @@ func readJSONFile(path string) any {
 	return v
 }
 
-func (s *Server) loadTraces() []*trace.Trace {
-	matches, _ := filepath.Glob(filepath.Join(s.cfg.OutDir, "traces", "*.json"))
+// outFor is the run directory a request is about: ?run=<id> names any run the dashboard lists (including audits started
+// from the command line), otherwise the directory the API was started with.
+func (s *Server) outFor(r *http.Request) string {
+	if id := r.URL.Query().Get("run"); id != "" {
+		if d, ok := s.resolveRun(id); ok {
+			return d
+		}
+	}
+	return s.cfg.OutDir
+}
+
+func (s *Server) loadTraces(dirs ...string) []*trace.Trace {
+	dir := s.cfg.OutDir
+	if len(dirs) > 0 {
+		dir = dirs[0]
+	}
+	matches, _ := filepath.Glob(filepath.Join(dir, "traces", "*.json"))
 	var out []*trace.Trace
 	for _, m := range matches {
 		if tr, err := trace.Load(m); err == nil {
@@ -242,12 +257,13 @@ func (s *Server) loadTraces() []*trace.Trace {
 }
 
 func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
-	trs := s.loadTraces()
+	dir := s.outFor(r)
+	trs := s.loadTraces(dir)
 	writeJSON(w, map[string]any{
-		"validation":   readJSONFile(filepath.Join(s.cfg.OutDir, "validation.json")),
-		"campaign":     readJSONFile(filepath.Join(s.cfg.OutDir, "report.json")),
-		"hunt":         readJSONFile(filepath.Join(s.cfg.OutDir, "hunt.json")),
-		"evaluation":   s.evaluation(),
+		"validation":   readJSONFile(filepath.Join(dir, "validation.json")),
+		"campaign":     readJSONFile(filepath.Join(dir, "report.json")),
+		"hunt":         readJSONFile(filepath.Join(dir, "hunt.json")),
+		"evaluation":   s.evaluation(dir),
 		"trace_count":  len(trs),
 		"scenario":     s.cfg.ScenarioPath,
 		"default_offl": s.cfg.Offline,
@@ -273,7 +289,7 @@ type traceSummary struct {
 func (s *Server) traces(w http.ResponseWriter, r *http.Request) {
 	kind := r.URL.Query().Get("kind")
 	var out []traceSummary
-	for _, tr := range s.loadTraces() {
+	for _, tr := range s.loadTraces(s.outFor(r)) {
 		if kind != "" && tr.Kind != kind {
 			continue
 		}
@@ -296,7 +312,7 @@ func (s *Server) traceByID(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	tr, err := trace.Load(filepath.Join(s.cfg.OutDir, "traces", id+".json"))
+	tr, err := trace.Load(filepath.Join(s.outFor(r), "traces", id+".json"))
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -326,7 +342,7 @@ type Side struct {
 func (s *Server) pairs(w http.ResponseWriter, r *http.Request) {
 	groups := map[string]*pairView{}
 	var order []string
-	for _, tr := range s.loadTraces() { // newest first
+	for _, tr := range s.loadTraces(s.outFor(r)) { // newest first
 		if tr.Kind != "attack" || tr.Attack == nil {
 			continue
 		}
@@ -654,7 +670,7 @@ func (s *Server) reportHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		dir = d
 	}
-	o := export.Options{Dir: dir, ScenarioDir: filepath.Dir(s.cfg.ScenarioPath), Scenario: q.Get("scenario"), Title: q.Get("title"), Classification: q.Get("classification")}
+	o := export.Options{Dir: dir, ScenarioDir: s.scenarioDirFor(dir), Scenario: q.Get("scenario"), Title: q.Get("title"), Classification: q.Get("classification")}
 	if len(o.Title) > 120 || len(o.Classification) > 40 {
 		http.Error(w, "title or classification too long", http.StatusBadRequest)
 		return
@@ -678,8 +694,8 @@ func (s *Server) reportHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // evaluation is the shared security evaluation of the API's own output directory (nil when there is nothing to evaluate).
-func (s *Server) evaluation() any {
-	rep, err := export.Build(s.exportOptions(s.cfg.OutDir, "", "", ""))
+func (s *Server) evaluation(dir string) any {
+	rep, err := export.Build(s.exportOptions(dir, "", "", ""))
 	if err != nil {
 		return nil
 	}

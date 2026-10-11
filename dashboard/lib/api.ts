@@ -176,7 +176,23 @@ async function check(r: Response, path: string) {
   if (!r.ok) throw new ApiError((await r.text()).trim() || `${path}: HTTP ${r.status}`, r.status);
 }
 
+const RUN_KEY = "avhsol.run";
+/** The run the Traces, Verdict and summary pages show: "" is the directory the API was started with. */
+export function getActiveRun(): string {
+  try { return localStorage.getItem(RUN_KEY) ?? ""; } catch { return ""; }
+}
+export function setActiveRun(id: string) {
+  try { if (id) localStorage.setItem(RUN_KEY, id); else localStorage.removeItem(RUN_KEY); } catch { /* storage unavailable: the default run is used */ }
+}
+const RUN_SCOPED = ["/api/traces", "/api/summary", "/api/pairs", "/api/advisories"];
+function scoped(path: string): string {
+  const run = getActiveRun();
+  if (!run || path.includes("run=") || !RUN_SCOPED.some((p) => path === p || path.startsWith(p + "/") || path.startsWith(p + "?"))) return path;
+  return path + (path.includes("?") ? "&" : "?") + "run=" + encodeURIComponent(run);
+}
+
 export async function get<T>(path: string): Promise<T> {
+  path = scoped(path);
   const r = await fetch(API + path, { cache: "no-store", headers: headers() });
   await check(r, path);
   return r.json() as Promise<T>;

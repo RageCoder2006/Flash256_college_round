@@ -39,7 +39,52 @@ func (s *Server) runDirs() map[string]string {
 			out[filepath.Base(c)] = c
 		}
 	}
+	// Runs started from the command line (`avhsol .`) live under the state directory: <run>/dyn holds their traces.
+	m, _ := filepath.Glob(filepath.Join(home.StateDir(), "runs", "*"))
+	for _, r := range m {
+		for _, c := range []string{filepath.Join(r, "dyn"), r} {
+			if fi, err := os.Stat(filepath.Join(c, "traces")); err == nil && fi.IsDir() {
+				if _, taken := out[filepath.Base(r)]; !taken {
+					out[filepath.Base(r)] = c
+				}
+				break
+			}
+		}
+	}
 	return out
+}
+
+// scenarioDirFor is where the scenario of a run is found: a command-line audit keeps the scenario it generated next to its traces.
+func (s *Server) scenarioDirFor(dir string) string {
+	if filepath.Base(dir) == "dyn" {
+		if sd := filepath.Join(filepath.Dir(dir), "scenarios"); dirExists(sd) {
+			return sd
+		}
+	}
+	return filepath.Dir(s.cfg.ScenarioPath)
+}
+
+func dirExists(p string) bool { st, err := os.Stat(p); return err == nil && st.IsDir() }
+
+// StoreReport saves a generated report under <dir>/reports with the metadata the dashboard lists, and returns it.
+// The command line uses it too, so a report written there is visible, previewable and downloadable in the dashboard.
+func StoreReport(dir, run, format, skeleton, title, class string, body []byte, by string) (ReportMeta, error) {
+	rnd := make([]byte, 3)
+	_, _ = rand.Read(rnd)
+	id := fmt.Sprintf("rpt-%d-%s", time.Now().Unix(), hex.EncodeToString(rnd))
+	file := id + "." + formatExt[format]
+	rdir := filepath.Join(dir, "reports")
+	if err := os.MkdirAll(rdir, 0o755); err != nil {
+		return ReportMeta{}, err
+	}
+	sum := sha256.Sum256(body)
+	m := ReportMeta{ID: id, Run: run, Format: format, Skeleton: skeleton, Title: title, Class: class, Bytes: len(body),
+		SHA256: hex.EncodeToString(sum[:]), CreatedAt: time.Now().UTC().Format(time.RFC3339), CreatedBy: by, File: file}
+	mb, _ := json.MarshalIndent(m, "", "  ")
+	if err := os.WriteFile(filepath.Join(rdir, file), body, 0o644); err != nil {
+		return m, err
+	}
+	return m, os.WriteFile(filepath.Join(rdir, id+".json"), mb, 0o644)
 }
 
 func (s *Server) resolveRun(id string) (string, bool) {
@@ -69,7 +114,7 @@ var formatExt = map[string]string{"html": "html", "pdf": "pdf", "md": "md", "jso
 var formatType = map[string]string{"html": "text/html; charset=utf-8", "pdf": "application/pdf", "md": "text/markdown; charset=utf-8", "json": "application/json", "sarif": "application/sarif+json"}
 
 func (s *Server) exportOptions(dir, scenarioID, title, class string) export.Options {
-	o := export.Options{Dir: dir, ScenarioDir: filepath.Dir(s.cfg.ScenarioPath), Scenario: scenarioID, Title: title, Classification: class}
+	o := export.Options{Dir: dir, ScenarioDir: s.scenarioDirFor(dir), Scenario: scenarioID, Title: title, Classification: class}
 	if pub, err := sign.LoadPublic(graph.Setting("AVHSOL_SIGNING_KEY", "", home.SigningKey()) + ".pub"); err == nil {
 		o.Pub = pub
 	}
@@ -257,24 +302,11 @@ func (s *Server) reportRoutes(mux *http.ServeMux) {
 			http.Error(w, err.Error(), code)
 			return
 		}
-		rnd := make([]byte, 3)
-		_, _ = rand.Read(rnd)
-		id := fmt.Sprintf("rpt-%d-%s", time.Now().Unix(), hex.EncodeToString(rnd))
-		file := id + "." + formatExt[b.Format]
-		rdir := filepath.Join(dir, "reports")
-		if err := os.MkdirAll(rdir, 0o755); err != nil {
+		m, err := StoreReport(dir, b.Run, b.Format, b.Skeleton, b.Title, b.Classification, body, callerOf(r).ID)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		sum := sha256.Sum256(body)
-		m := ReportMeta{ID: id, Run: b.Run, Format: b.Format, Skeleton: b.Skeleton, Title: b.Title, Class: b.Classification, Bytes: len(body),
-			SHA256: hex.EncodeToString(sum[:]), CreatedAt: time.Now().UTC().Format(time.RFC3339), CreatedBy: callerOf(r).ID, File: file}
-		mb, _ := json.MarshalIndent(m, "", "  ")
-		if err := os.WriteFile(filepath.Join(rdir, file), body, 0o644); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		_ = os.WriteFile(filepath.Join(rdir, id+".json"), mb, 0o644)
 		writeJSON(w, m)
 	})
 	serve := func(w http.ResponseWriter, r *http.Request, download bool) {

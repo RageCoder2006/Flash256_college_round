@@ -33,6 +33,21 @@ Output goes to a new directory under the state directory (`~/.local/share/avhsol
 your code (`--out` to choose; one inside the audited directory is refused). It holds `whitebox.json`, `whitebox.sarif`,
 `scenarios/`, `target.yaml`, `seeds.yaml`, `dyn/` (traces, validation), `evaluation.txt`, `report.html|json|sarif`.
 
+## The dashboard sees the same results
+
+Runs go to the state directory (`~/.local/share/avhsol/runs/`), and `avhsol serve` lists everything there, so an audit started in a
+terminal is available in the dashboard without copying anything:
+
+* **Reports** lists the run; the HTML, JSON, SARIF and (when Chrome is available) PDF reports the CLI wrote are registered there, so
+  you can preview and download them, and generate more.
+* **Run selector** (bottom of the sidebar): choose the run and the Traces, Verdict and summary pages show it. "Server default" is the
+  directory the API was started with.
+* **Neural graph**: when Neo4j is reachable the audit records its traces in the graph automatically (`AVHSOL_GRAPH=0` or `--graph=false`
+  to skip), so the graph page shows them too.
+* **Terminal**: `avhsol summary -in <run>/dyn` and the menu's traces screen read the same files.
+
+The API must be restarted after upgrading the binary; it picks up new runs on its own.
+
 ## Which agents it can launch
 
 * **pi** (the vendored monorepo) is recognised and needs nothing else.

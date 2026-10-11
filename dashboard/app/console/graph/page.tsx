@@ -44,7 +44,7 @@ export default function NeuralGraphPage() {
   const [speed, setSpeed] = useState(1);
   const [size, setSize] = useState({ w: 900, h: 600 });
   const [reduced, setReduced] = useState(false);
-  const [dockOpen, setDockOpen] = useState(true);
+  const [dockOpen, setDockOpen] = useState(false);
   const [tab, setTab] = useState<"inspect" | "ask">("ask");
   const stage = useRef<HTMLDivElement>(null);
   const handle = useRef<NeuralHandle>(null);
@@ -249,6 +249,7 @@ export default function NeuralGraphPage() {
         <div><h1>Neural graph</h1><p className="muted">Click a run to replay it as a mission; click any node to inspect it; ask a question to light up what the answer draws on.</p></div>
       </div>
 
+      <div className="cc-layout">
       <div className={`graph-stage cc-stage${replayEp ? " live" : ""}`} ref={stage}>
         <NeuralGraph ref={handle} scene={scene} width={size.w} height={size.h} activation={activation} visible={visible}
           selected={picked?.id} reduced={reduced} onNodeHover={setHover} onNodeClick={pick} />
@@ -300,10 +301,15 @@ export default function NeuralGraphPage() {
           {(activation || replayEp) && <button className="btn ghost" onClick={() => { setActivation(undefined); if (replayEp) stopReplay(); else handle.current?.fit(); }}><RotateCcw size={14} /> Reset</button>}
         </div>
 
-        {/* right dock: inspector + chat, minimisable */}
+      </div>
+
+        {/* side dock, outside the canvas: a slim rail until a node is clicked or a button is used */}
         <aside className={`cc-dock glass${dockOpen ? "" : " min"}`} aria-label="Inspector and chat">
           {!dockOpen ? (
-            <button className="cc-dock-open" onClick={() => setDockOpen(true)} aria-label="Open panel"><ChevronRight size={16} style={{ transform: "rotate(180deg)" }} /><span>{tab === "ask" ? "Ask" : "Inspect"}</span></button>
+            <div className="cc-rail">
+              <button onClick={() => { setTab("inspect"); setDockOpen(true); }} aria-label="Open inspector" title="Inspect: click a node on the graph"><ScanSearch size={17} /><span>Inspect</span></button>
+              <button onClick={() => { setTab("ask"); setDockOpen(true); }} aria-label="Open ask graph" title="Ask the graph a question"><MessageSquare size={17} /><span>Ask</span></button>
+            </div>
           ) : (
             <>
               <div className="cc-tabs" role="tablist">

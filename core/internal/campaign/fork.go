@@ -2,7 +2,9 @@ package campaign
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/41vi4p/avhsol/core/internal/audit"
@@ -87,9 +89,9 @@ func (r *Runner) Fork(ctx context.Context, orig *trace.Trace, at int, o ForkOpti
 		for _, e := range plan.Exchanges {
 			calls := make([]map[string]any, 0, len(e.ToolCalls))
 			for _, c := range e.ToolCalls {
-				calls = append(calls, map[string]any{"id": c.ID, "name": c.Name, "args": c.Args})
+				calls = append(calls, map[string]any{"id": c.ID, "name": c.Name, "args": rebaseWorkspace(c.Args, w.WorkDir())})
 			}
-			ex = append(ex, map[string]any{"text": e.Text, "tool_calls": calls})
+			ex = append(ex, map[string]any{"text": rebaseText(e.Text, w.WorkDir()), "tool_calls": calls})
 		}
 		if err := gc.SetCassette(ctx, ex); err != nil {
 			return nil, fmt.Errorf("loading the recorded answers into the proxy: %w", err)
@@ -114,6 +116,27 @@ func toHarnessSteps(steps []trace.Step) []harness.Step {
 	out := make([]harness.Step, 0, len(steps))
 	for _, s := range steps {
 		out = append(out, harness.Step{Type: s.Type, TS: s.TS, Data: s.Data})
+	}
+	return out
+}
+
+// workspaceRe matches the per-episode workspace root the recorded agent saw. Each episode gets a fresh directory, so
+// absolute paths in a recorded call point at a directory that no longer exists; the replay must use the new one.
+var workspaceRe = regexp.MustCompile(`/tmp/avhsol-ep-[0-9]+/workspace`)
+
+func rebaseText(s, workdir string) string { return workspaceRe.ReplaceAllLiteralString(s, workdir) }
+
+func rebaseWorkspace(args map[string]any, workdir string) map[string]any {
+	if args == nil {
+		return args
+	}
+	b, err := json.Marshal(args)
+	if err != nil {
+		return args
+	}
+	var out map[string]any
+	if json.Unmarshal([]byte(rebaseText(string(b), workdir)), &out) != nil {
+		return args
 	}
 	return out
 }

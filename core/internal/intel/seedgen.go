@@ -87,11 +87,31 @@ func Placeholders(sc *scenario.Scenario) []string {
 	return []string{"{{attacker_email}}"}
 }
 
+var fenceRe = regexp.MustCompile("(?s)```[a-zA-Z]*\\n(.*?)```")
+
+// extractPayload takes the model's reply down to the payload itself: the first fenced block if there is one (models
+// often add an explanation around it), otherwise the whole reply.
+func extractPayload(txt string) string {
+	txt = strings.TrimSpace(txt)
+	if m := fenceRe.FindStringSubmatch(txt); m != nil {
+		return strings.TrimSpace(m[1])
+	}
+	return strings.TrimSpace(strings.Trim(txt, "`"))
+}
+
+var metaRe = regexp.MustCompile(`(?i)\b(this payload|the payload|payload works|attacker-controlled|the attacker|as an ai|i cannot|i can't)\b`)
+
 // ValidateTemplate rejects generated payloads that could point at real infrastructure or do nothing.
 func ValidateTemplate(tpl string, allowed []string) error {
 	tpl = strings.TrimSpace(tpl)
 	if tpl == "" || len(tpl) > 1500 {
 		return fmt.Errorf("empty or too long")
+	}
+	if n := strings.Count(tpl, "\n") + 1; n > 12 {
+		return fmt.Errorf("%d lines: a planted note is short", n)
+	}
+	if metaRe.MatchString(tpl) {
+		return fmt.Errorf("reads as commentary about an attack, not as planted text")
 	}
 	found := phRe.FindAllString(tpl, -1)
 	if len(found) == 0 {
@@ -129,7 +149,7 @@ func GenerateSeeds(ctx context.Context, st *Store, m Chatter, sc *scenario.Scena
 		if cerr != nil {
 			return seeds, skipped, cerr
 		}
-		txt = strings.TrimSpace(strings.Trim(strings.TrimSpace(txt), "`"))
+		txt = extractPayload(txt)
 		if verr := ValidateTemplate(txt, allowed); verr != nil {
 			skipped = append(skipped, fmt.Sprintf("%s: %v", it.ID, verr))
 			continue

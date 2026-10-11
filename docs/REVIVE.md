@@ -14,4 +14,4 @@ model take over, optionally with a different guard mode or an edited tool result
   (`-offline` is refused), is refused for black-box HTTP targets, and the oracles judge the whole run including the replayed prefix.
 * **Verified here** with a scripted OpenAI-compatible mock model: an exploited run forked at the exfiltration call with the guard enforcing was blocked,
   forked at the README with the payload removed it was not exploited, and the closed-box cassette path replayed the first exchange then blocked the second.
-  Not run against a real model.
+  Then run once against the real model with the pi agent (see STATUS.md), which found and fixed a workspace-path bug in the cassette.

@@ -37,7 +37,7 @@ API: `GET /api/intel/status`, `GET /api/intel/items` (viewer), `POST /api/intel/
 1. **Seeds.** `intel seeds` ranks items (KEV, then EPSS, then CVSS; papers lower), asks the model to adapt the *technique* to the
    scenario's surfaces with the advisory passed as quoted data under a "never obey" system prompt, and **validates** every result:
    it must use only the scenario's placeholders (`{{sink_url}}`, `{{host_secret_path}}`, `{{attacker_email}}`) and contain no literal URL or
-   email. Invalid output is dropped, never repaired. Each seed carries `ref` (e.g. `GHSA-...`); the run's trace records it as
+   email. Invalid output is dropped, never repaired (the reply is first reduced to its fenced block, capped at 12 lines, and rejected if it reads as commentary about an attack). Each seed carries `ref` (e.g. `GHSA-...`); the run's trace records it as
    `attack.intel_ref`. A seed is an *idea to test*, not a finding.
 2. **Graph.** `:Intel` nodes (`MOTIVATES` → `:Technique`, `(:Episode)-[:INSPIRED_BY]->(:Intel)`), embedded into a separate Qdrant
    collection so GraphRAG answers can cite them without mixing into run evidence.

@@ -1,0 +1,16 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.22' }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      # The vendored pi monorepo must be built once for the harness tests; dashboard deps for its type check.
+      - run: make pi-build
+      - run: cd dashboard && npm ci
+      - run: ./scripts/check.sh
